@@ -29,6 +29,11 @@
 #include "algorithm/AlgorithmBase.h"
 #include "algorithm/Parameters.h"
 #include "algorithm/Results.h"
+#include "algorithm/ImageListParameter.h"	
+#include "image/io/DataServer.h"
+
+#include <global/geometry/SRTTransform.h>
+#include <global/geometry/SizeF.h>
 
 namespace sedeen {
 namespace tile {
@@ -36,6 +41,23 @@ namespace tile {
 } // namespace tile
 
 namespace algorithm {
+    ///This struct holds the image properties
+    struct ImageProperties
+    {
+        std::basic_string <char> location;
+        int nlevels;
+        sedeen::SRTTransform sedeen_transform;
+        int opacity;
+        bool visibility;
+        sedeen::SizeF  spacing;
+        sedeen::Size   size;
+        sedeen::PointF centre;
+
+        double x_centre;
+        double y_centre;
+    };
+
+
 
 ///StainEvaluation plugin for Sedeen Viewer
 class StainEvaluation : public algorithm::AlgorithmBase {
@@ -51,17 +73,32 @@ private:
 	virtual void init(const image::ImageHandle& image);
     virtual void run();
 
-    /// Creates the thresholding pipeline with a cache
-    //
-    /// \return 
-    /// TRUE if the pipeline has changed since the call to this function, FALSE
-    /// otherwise
     bool buildPipeline();
+
+
+    image::RawImage GetRawImage(const image::ImageHandle& im);
+    image::RawImage GetDisplayImage(const image::ImageHandle& im);
+
+
+
+
+
+    ImageProperties GetImageProperties(const image::ImageHandle& im, sedeen::algorithm::ImageInfo *imageinfo);
+
+
+    bool SetImageInfo(int index);
+
+    ///Create text for a report containing the properties of 
+    std::string generateImagePropertiesReport(ImageProperties ip);
+
 
 private:
     DisplayAreaParameter m_displayArea;
+    ImageListParameter m_imageList;
 
     GraphicItemParameter m_regionToProcess; //single output region
+
+
 
     /// User defined Threshold value.
     //algorithm::DoubleParameter m_threshold;
@@ -70,6 +107,17 @@ private:
     ImageResult m_result;
     TextResult m_outputText;
     std::string m_report;
+
+    ///The test image pointer (modified image)
+    std::shared_ptr<sedeen::image::Image> m_testImage;
+    ///The reference image pointer (to compare test images against)
+    std::shared_ptr<sedeen::image::Image> m_refImage;
+
+    ///Properties of the test image, obtained from the Image and ImageInfo objects
+    ImageProperties m_testImageProperties;
+    ///Properties of the reference image, obtained from the Image and ImageInfo objects
+    ImageProperties m_refImageProperties;
+
 
     /// The intermediate image factory after thresholding
     //std::shared_ptr<image::tile::Factory> m_ODThreshold_factory;
