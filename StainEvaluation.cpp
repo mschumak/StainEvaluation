@@ -52,14 +52,21 @@ namespace algorithm {
 StainEvaluation::StainEvaluation()
     : m_displayArea(),
     m_imageList(),
-    m_regionToProcess(),
+    //m_regionToProcess(),
+
+    m_thresholdParameter(10.0), //temp
 
     //Member data
+
+    m_maskImage(),
+    m_sourceImage(),
+    m_maskImageProperties(),
+    m_sourceImageProperties(),
+
     m_testImage(),
     m_refImage(),
     m_testImageProperties(),
     m_refImageProperties(),
-
     //Output objects
     m_result(),
     m_outputText(),
@@ -107,30 +114,57 @@ void StainEvaluation::run() {
     bool imageChecksPassed = true;
     if (m_imageList.count() != 2) {
         report.append("This plugin requires exactly two images to be loaded. ");
-        report.append("Please load a test image and a reference image in Sedeen. ");
-        report.append("Click on the test image to highlight it. ");
-        report.append("Check that the test image location is in the Image text box at the top of the Analysis Manager.");
+
+
+        report.append("Please load a source image and a mask image in Sedeen. ");
+        report.append("Click on the MASK image to highlight it. ");
+        report.append("Check that the MASK image location is in the Image text box at the top of the Analysis Manager.");
+
+
+        //These will be for the comparison!
+        //report.append("Please load a test image and a reference image in Sedeen. ");
+        //report.append("Click on the test image to highlight it. ");
+        //report.append("Check that the test image location is in the Image text box at the top of the Analysis Manager.");
+        
+        
         imageChecksPassed = false;
     }
     //additional image checks?
+
+    //check whether the images intersect, provide helpful error message if not
+
 
     //Keep this condition separate so that additional image checks can be added
     bool pipeline_changed = false;
     if (imageChecksPassed) {
         report.append("Entered the clause to build the pipeline\n");
 
-        pipeline_changed = buildPipeline();
 
-        //Build a report 
-
-        //int testImageIndex = m_imageList.indexOf(image());
-        //int refImageIndex = 1 - m_imageList.indexOf(image());
-        //std::stringstream ss;
-        //ss << "The test image index is: " << testImageIndex;
-        //ss << " and the reference image index is: " << refImageIndex << std::endl;
-        //report.append(ss.str());
+        //This is for applying the mask image to a source (DAPI on unseparated image)
+        pipeline_changed = buildApplyMaskPipeline();
 
 
+
+
+
+
+
+
+
+        //Add the properties of the two images to the output report
+        report.append("Mask image properties:\n");
+        report.append(generateImagePropertiesReport(m_maskImageProperties));
+        report.append("\nSource image properties:\n");
+        report.append(generateImagePropertiesReport(m_sourceImageProperties));
+
+
+
+        //For later: test and reference comparison
+        //Add the properties of the two images to the output report
+        //report.append("Test image properties:\n");
+        //report.append(generateImagePropertiesReport(m_testImageProperties));
+        //report.append("\nReference image properties:\n");
+        //report.append(generateImagePropertiesReport(m_refImageProperties));
     }
     else {
         //Send the report immediately
@@ -179,7 +213,7 @@ void StainEvaluation::run() {
 
 
 
-bool StainEvaluation::buildPipeline() {
+bool StainEvaluation::buildApplyMaskPipeline() {
     using namespace image::tile;
     bool pipeline_changed = false;
 
@@ -193,50 +227,66 @@ bool StainEvaluation::buildPipeline() {
         || m_displayArea.isChanged()
         || m_imageList.isChanged()   )
     {
-        //The test image should be the one in the Image textbox, and 
+
+        //m_maskImage;
+        //m_sourceImage;
+
+        //m_maskImageProperties;
+        //m_sourceImageProperties;
+
+
+        //The MASK image should be the one in the Image textbox, and 
         //so should be pointed to by image(). Get the properties of it and
-        //the other loaded image (the reference image) and assign them to member variables.
-        int testImageIndex = m_imageList.indexOf(image());
-        int refImageIndex = 1 - m_imageList.indexOf(image());
+        //the other loaded image (the source image) and assign them to member variables.
 
-        //Test image info, properties, and Image object pointer (workaround)
-        ImageInfo testImageInfo = m_imageList.info(testImageIndex);
-        std::string testImageLocation = testImageInfo.location;
-        //sedeen::SRTTransform testImageTransform = testImageInfo.transform;
-        auto testImageOpener = image::createImageOpener();
-        m_testImage = testImageOpener->open(file::Location(testImageLocation));
+        int maskImageIndex = m_imageList.indexOf(image());
+        int sourceImageIndex = 1 - m_imageList.indexOf(image());
+
+        //Mask image info, properties, and Image object pointer (workaround)
+        ImageInfo maskImageInfo = m_imageList.info(maskImageIndex);
+        std::string maskImageLocation = maskImageInfo.location;
+        //sedeen::SRTTransform maskImageTransform = maskImageInfo.transform;
+        auto maskImageOpener = image::createImageOpener();
+        m_maskImage = maskImageOpener->open(file::Location(maskImageLocation));
+        
         //If an image currently open in Sedeen cannot be re-opened, throw error
-        if (!m_testImage) {
-            throw std::runtime_error("Could not open the test image: " + file::Location(testImageLocation).getFilename());
+        if (!m_maskImage) {
+            throw std::runtime_error("Could not open the mask image: " + file::Location(maskImageLocation).getFilename());
         }
-        m_testImageProperties = GetImageProperties(m_testImage, &testImageInfo);
 
-        //Reference image info, properties, and Image object pointer (workaround)
-        ImageInfo refImageInfo = m_imageList.info(refImageIndex);
-        std::string refImageLocation = refImageInfo.location;
-        sedeen::SRTTransform refImageTransform = refImageInfo.transform;
-        auto refImageOpener = image::createImageOpener();
-        m_refImage = refImageOpener->open(file::Location(refImageLocation));
+        //Temp approach to this
+        //If one exists, open the session file for the image
+        //The problem is that new changes to the Pixel Spacing boxes are not stored here yet
+        sedeen::Session maskSession = sedeen::Session(maskImageLocation);
+        maskSession.loadFromFile();
+        //
+        //The pixel spacing as set in the Transform box. Stored in the Session xml file for the image
+        sedeen::SizeF maskTrSpacing = maskSession.getPixelSize();
+        //Fill the ImageProperties struct for the test image
+        m_maskImageProperties = GetImageProperties(m_maskImage, &maskImageInfo, maskTrSpacing);
+
+
+
+        //Source image info, properties, and Image object pointer (workaround)
+        ImageInfo sourceImageInfo = m_imageList.info(sourceImageIndex);
+        std::string sourceImageLocation = sourceImageInfo.location;
+        //sedeen::SRTTransform sourceImageTransform = sourceImageInfo.transform;
+        auto sourceImageOpener = image::createImageOpener();
+        m_sourceImage = sourceImageOpener->open(file::Location(sourceImageLocation));
         //If an image currently open in Sedeen cannot be re-opened, throw error
-        if (!m_refImage) {
-            throw std::runtime_error("Could not open the reference image: " + file::Location(refImageLocation).getFilename());
+        if (!m_sourceImage) {
+            throw std::runtime_error("Could not open the source image: " + file::Location(sourceImageLocation).getFilename());
         }
-        m_refImageProperties = GetImageProperties(m_refImage, &refImageInfo);
-
-
-
-
-
-    // Get source image properties
-    //auto source_factory = image()->getFactory();
-    //auto source_color = source_factory->getColorSpace();
-
-
-
-
-
-
-
+        //Temp approach to this
+        //If one exists, open the session file for the image
+        //The problem is that new changes to the Pixel Spacing boxes are not stored here yet
+        sedeen::Session sourceSession = sedeen::Session(sourceImageLocation);
+        sourceSession.loadFromFile();
+        //
+        //The pixel spacing as set in the Transform box. Stored in the Session xml file for the image
+        sedeen::SizeF sourceTrSpacing = sourceSession.getPixelSize();
+        //Fill the ImageProperties struct for the source image
+        m_sourceImageProperties = GetImageProperties(m_sourceImage, &sourceImageInfo, sourceTrSpacing);
 
 
 
@@ -244,6 +294,22 @@ bool StainEvaluation::buildPipeline() {
 
 
 
+        //Get the containing rectangles of the images
+        sedeen::Rect maskContainingRect = sedeen::image::rect(m_maskImage, 0);
+        sedeen::Rect sourceContainingRect = sedeen::image::rect(m_sourceImage, 0);
+        //Find the intersection of the two rectangles
+        sedeen::Rect intersectionRect = sedeen::intersection(maskContainingRect, sourceContainingRect);
+        //If the intersection is empty, set doProcessing to false
+        bool intersectionEmpty = sedeen::isEmpty(intersectionRect);
+        if (intersectionEmpty) {
+            pipeline_changed = false;
+            //temp: will handle the return differently later
+            return pipeline_changed;
+        }
+        else {
+
+
+            //Crop the source image to the intersection rectangle
 
 
 
@@ -254,6 +320,28 @@ bool StainEvaluation::buildPipeline() {
 
 
 
+
+        }
+
+
+
+        //Threshold
+        //Crop
+        //Resample
+        //Mask
+        //Save both cropped
+
+        //Pixel-to-pixel operations
+
+
+
+
+
+
+        //Try cropping
+
+
+     
 
 
 
@@ -295,72 +383,90 @@ bool StainEvaluation::buildPipeline() {
     //}
 
     return pipeline_changed;
-}//end buildPipeline
+}//end buildApplyMaskPipeline
 
 
 
-ImageProperties StainEvaluation::GetImageProperties(const image::ImageHandle& im, sedeen::algorithm::ImageInfo *imageinfo)
+
+
+ImageProperties StainEvaluation::GetImageProperties(const image::ImageHandle& im, sedeen::algorithm::ImageInfo *imageinfo,
+    const sedeen::SizeF &trSpacing /*= sedeen::SizeF(1.0, 1.0)*/)
 {
     ImageProperties imProps;
+    if (imageinfo == nullptr) {
+        return imProps;
+    }
 
-    //auto imageinfo = image_list_.info(index);     //image_list_.indexOf(image()));
+    //auto imageinfo = image_list_.info(index);     
+    //image_list_.indexOf(image()));
     imProps.sedeen_transform = imageinfo->transform;
     imProps.opacity = imageinfo->opacity;
     imProps.visibility = imageinfo->visible;
     imProps.location = imageinfo->location;
 
-    //auto dataServer = createDataServer(im);
-    //imProps.nlevels = dataServer->getNumLevels();
+    //The pixel spacing as set in the Transform box. 
+    imProps.tr_pixel_spacing = trSpacing;
 
+    //Get the ColorSpace for the image
+    auto source_factory = im->getFactory();
+    sedeen::ColorSpace color_space = source_factory->getColorSpace();
+    imProps.color_model = color_space.colorModel();
+    imProps.pixel_type = color_space.channelType();
+
+    auto dataServer = createDataServer(im);
+    imProps.nlevels = dataServer->getNumLevels();
 
     int im_width = im->getMetaData()->get(image::IntegerTags::IMAGE_X_DIMENSION, 0);  // pixel
     int im_height = im->getMetaData()->get(image::IntegerTags::IMAGE_Y_DIMENSION, 0);
-    imProps.size = sedeen::Size(im_width, im_height);
+    imProps.image_size = sedeen::Size(im_width, im_height);
 
-    double x_spacing = 1;	//mm with no pixel spacing
-    double y_spacing = 1;
-    if (im->getMetaData()->has(image::DoubleTags::PIXEL_SIZE_X))
-        x_spacing = im->getMetaData()->get(image::DoubleTags::PIXEL_SIZE_X, 0) / 1000; //mm
-    if (im->getMetaData()->has(image::DoubleTags::PIXEL_SIZE_Y))
-        y_spacing = im->getMetaData()->get(image::DoubleTags::PIXEL_SIZE_Y, 0) / 1000;
-    imProps.spacing = sedeen::SizeF(x_spacing, y_spacing);
-
-    double x_centre = im->getMetaData()->get(image::DoubleTags::IMAGE_CENTRE_X, 0) / 2;   //IMAGE_CENTRE_X is in mm
-    double y_centre = im->getMetaData()->get(image::DoubleTags::IMAGE_CENTRE_Y, 0) / 2;	  //IMAGE_CENTRE_Y is in mm
-    imProps.centre = sedeen::PointF(x_centre, y_centre);
+    double x_pixel_size = 1;	//default val, mm
+    double y_pixel_size = 1;
+    if (im->getMetaData()->has(image::DoubleTags::PIXEL_SIZE_X)) {
+        x_pixel_size = im->getMetaData()->get(image::DoubleTags::PIXEL_SIZE_X, 0) / 1000; //mm
+    }
+    if (im->getMetaData()->has(image::DoubleTags::PIXEL_SIZE_Y)) {
+        y_pixel_size = im->getMetaData()->get(image::DoubleTags::PIXEL_SIZE_Y, 0) / 1000;
+    }
+    imProps.image_pixel_size = sedeen::SizeF(x_pixel_size, y_pixel_size);
 
     return imProps;
 }//end GetImageProperties
 
 
 
-std::string StainEvaluation::generateImagePropertiesReport(ImageProperties ip) {
+const std::string StainEvaluation::generateImagePropertiesReport(const ImageProperties &ip) {
+    sedeen::Size   image_size = ip.image_size;
+    sedeen::SizeF  image_pixel_size = ip.image_pixel_size;
 
+    sedeen::SRTTransform tr = ip.sedeen_transform;
+    sedeen::PointF trcenter = tr.center();
+    sedeen::PointF trtranslation = tr.translation();
+    sedeen::SizeF  trscale = tr.scale();
+    sedeen::SizeF tr_pixel_spacing = ip.tr_pixel_spacing;
 
-    return std::string();
+    std::stringstream ss;
+    //Compose a report block with the properties of this image
+    ss << "Image location: " << ip.location << std::endl;
+    ss << "Number of levels: " << ip.nlevels << std::endl;
+    ss << "---Image Size---" << std::endl;
+    ss << "    Width: " << image_size.width() << std::endl;
+    ss << "    Height: " << image_size.height() << std::endl;
+    ss << "---Image Pixel Size---" << std::endl;
+    ss << "    Pixel Width: " << image_pixel_size.width() << std::endl;
+    ss << "    Pixel Height: " << image_pixel_size.height() << std::endl;
+    ss << "---Sedeen Transform---" << std::endl;
+    ss << "    Pixel Spacing (um): (" << tr_pixel_spacing.width() << ", " << tr_pixel_spacing.height() << ")" << std::endl;
+    ss << "    Center: (" << trcenter.getX() << ", " << trcenter.getY() << ")" << std::endl;
+    ss << "    Translation: (" << trtranslation.getX() << ", " << trtranslation.getY() << ")" << std::endl;
+    ss << "    Scale: (" << trscale.width() << ", " << trscale.height() << ")" << std::endl;
+    ss << "    Rotation: " << tr.rotation() << std::endl;
+    ss << "Opacity: " << ip.opacity << std::endl;
+    ss << "Visibility: " << ip.visibility << std::endl;
+    ss << "Color model and pixel type: " << sedeen::colorDescription(sedeen::ColorSpace(ip.color_model, ip.pixel_type)) << std::endl;
+
+    return ss.str();
 }//end generateImagePropertiesReport
-
-
-
-
-
-
-
-
-
-
-
-image::RawImage StainEvaluation::GetRawImage(const image::ImageHandle& im)
-{
-    auto dataServer = createDataServer(im);
-    auto nlevels = dataServer->getNumLevels();
-    auto lowResRect = rect(im, nlevels - 1);
-    auto rawImage = dataServer->getImage(nlevels - 1, lowResRect);
-    if (rawImage.isNull())
-        throw("Could not open the target image");
-
-    return rawImage;
-}//end GetRawImage
 
 
 
@@ -396,6 +502,157 @@ bool StainEvaluation::SetImageInfo(int index)
 
     return true;
 }
+
+
+
+
+
+
+
+
+
+
+
+bool StainEvaluation::buildTestAndReferencePipeline() {
+    using namespace image::tile;
+    bool pipeline_changed = false;
+
+    //Re-check the number of loaded images
+    if (m_imageList.count() != 2) {
+        return false;
+    }
+
+    bool doProcessing = false;
+    if (pipeline_changed
+        || m_displayArea.isChanged()
+        || m_imageList.isChanged())
+    {
+        //The test image should be the one in the Image textbox, and 
+        //so should be pointed to by image(). Get the properties of it and
+        //the other loaded image (the reference image) and assign them to member variables.
+        int testImageIndex = m_imageList.indexOf(image());
+        int refImageIndex = 1 - m_imageList.indexOf(image());
+
+        //Test image info, properties, and Image object pointer (workaround)
+        ImageInfo testImageInfo = m_imageList.info(testImageIndex);
+        std::string testImageLocation = testImageInfo.location;
+        //sedeen::SRTTransform testImageTransform = testImageInfo.transform;
+        auto testImageOpener = image::createImageOpener();
+        m_testImage = testImageOpener->open(file::Location(testImageLocation));
+
+        //If an image currently open in Sedeen cannot be re-opened, throw error
+        if (!m_testImage) {
+            throw std::runtime_error("Could not open the test image: " + file::Location(testImageLocation).getFilename());
+        }
+
+        //Temp approach to this
+        //If one exists, open the session file for the image
+        //The problem is that new changes to the Pixel Spacing boxes are not stored here yet
+        sedeen::Session testSession = sedeen::Session(testImageLocation);
+        testSession.loadFromFile();
+        //
+        //The pixel spacing as set in the Transform box. Stored in the Session xml file for the image
+        sedeen::SizeF testTrSpacing = testSession.getPixelSize();
+        //Fill the ImageProperties struct for the test image
+        m_testImageProperties = GetImageProperties(m_testImage, &testImageInfo, testTrSpacing);
+
+        //Reference image info, properties, and Image object pointer (workaround)
+        ImageInfo refImageInfo = m_imageList.info(refImageIndex);
+        std::string refImageLocation = refImageInfo.location;
+        sedeen::SRTTransform refImageTransform = refImageInfo.transform;
+        auto refImageOpener = image::createImageOpener();
+        m_refImage = refImageOpener->open(file::Location(refImageLocation));
+        //If an image currently open in Sedeen cannot be re-opened, throw error
+        if (!m_refImage) {
+            throw std::runtime_error("Could not open the reference image: " + file::Location(refImageLocation).getFilename());
+        }
+        //Temp approach to this
+        //If one exists, open the session file for the image
+        //The problem is that new changes to the Pixel Spacing boxes are not stored here yet
+        sedeen::Session refSession = sedeen::Session(refImageLocation);
+        refSession.loadFromFile();
+        //
+        //The pixel spacing as set in the Transform box. Stored in the Session xml file for the image
+        sedeen::SizeF refTrSpacing = refSession.getPixelSize();
+        //Fill the ImageProperties struct for the reference image
+        m_refImageProperties = GetImageProperties(m_refImage, &refImageInfo, refTrSpacing);
+
+
+
+
+        //Threshold
+        //Crop
+        //Resample
+        //Mask
+        //Pixel-to-pixel operations
+
+
+
+
+
+
+        //Try cropping
+
+
+
+        //auto display_resolution = getDisplayResolution(image(), m_displayArea);
+
+        //Get the Behavior value from the m_retainment
+        //Scale down the threshold to create more precision
+        //auto threshold_kernel =
+        //    std::make_shared<image::tile::ODThresholdKernel>(m_threshold / 100.0,
+        //    behaviorVal, theWeights);
+
+        // Create a Factory for the composition of these Kernels
+        //auto non_cached_factory =
+        //    std::make_shared<FilterFactory>(source_factory, threshold_kernel);
+
+        // Wrap resulting Factory in a Cache for speedy results
+        //m_ODThreshold_factory =
+        //    std::make_shared<Cache>(non_cached_factory, RecentCachePolicy(30));
+
+        //pipeline_changed = true;
+
+
+    }//end if parameter values changed
+
+    //
+    // Constrain processing to the region of interest provided, if set
+    //std::shared_ptr<GraphicItemBase> region = m_regionToProcess;
+    //if (pipeline_changed && (nullptr != region)) {
+    //    // Constrain the output of the pipeline to the region of interest provided
+    //    auto constrained_factory = std::make_shared<RegionFactory>(m_ODThreshold_factory, region->graphic());
+
+    //    // Wrap resulting Factory in a Cache for speedy results
+    //    m_ODThreshold_factory = std::make_shared<Cache>(constrained_factory, RecentCachePolicy(30));
+    //}
+
+    return pipeline_changed;
+}//end buildPipeline
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

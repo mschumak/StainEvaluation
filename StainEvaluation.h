@@ -26,14 +26,16 @@
 #define SEDEEN_SRC_PLUGINS_STAINEVALUATION_STAINEVALUATION_H
 
 //Sedeen required headers
-#include "algorithm/AlgorithmBase.h"
-#include "algorithm/Parameters.h"
-#include "algorithm/Results.h"
-#include "algorithm/ImageListParameter.h"	
-#include "image/io/DataServer.h"
+#include <algorithm/AlgorithmBase.h>
+#include <algorithm/Parameters.h>
+#include <algorithm/Results.h>
+#include <algorithm/ImageListParameter.h>
+#include <image/io/DataServer.h>
 
+#include <global/ColorSpace.h>
 #include <global/geometry/SRTTransform.h>
 #include <global/geometry/SizeF.h>
+#include <archive/Session.h>
 
 namespace sedeen {
 namespace tile {
@@ -41,23 +43,25 @@ namespace tile {
 } // namespace tile
 
 namespace algorithm {
-    ///This struct holds the image properties
-    struct ImageProperties
-    {
-        std::basic_string <char> location;
-        int nlevels;
-        sedeen::SRTTransform sedeen_transform;
-        int opacity;
-        bool visibility;
-        sedeen::SizeF  spacing;
-        sedeen::Size   size;
-        sedeen::PointF centre;
+///struct to hold the image properties
+struct ImageProperties
+{
+    std::basic_string <char> location;
+    sedeen::SRTTransform sedeen_transform;
+    ///Pixel spacing set in the Sedeen Transform box, stored in session file
+    sedeen::SizeF tr_pixel_spacing; //um units
+    //The color model and channel/pixel type can be obtained from an image's ColorSpace
+    sedeen::ColorModel color_model;
+    sedeen::ChannelType pixel_type;
+        
+    int opacity;
+    bool visibility;
 
-        double x_centre;
-        double y_centre;
-    };
-
-
+    int nlevels;
+    ///Pixel size as read from the image
+    sedeen::SizeF  image_pixel_size;
+    sedeen::Size   image_size;
+};
 
 ///StainEvaluation plugin for Sedeen Viewer
 class StainEvaluation : public algorithm::AlgorithmBase {
@@ -73,31 +77,40 @@ private:
 	virtual void init(const image::ImageHandle& image);
     virtual void run();
 
-    bool buildPipeline();
+
+    ///The actual comparison this plugin is intended to accomplish
+    bool buildTestAndReferencePipeline();
+
+    ///Create a reference image by selecting pixels from an image using a pixel mask
+    bool buildApplyMaskPipeline();
 
 
-    image::RawImage GetRawImage(const image::ImageHandle& im);
+    
+
     image::RawImage GetDisplayImage(const image::ImageHandle& im);
 
 
 
 
 
-    ImageProperties GetImageProperties(const image::ImageHandle& im, sedeen::algorithm::ImageInfo *imageinfo);
+    ImageProperties GetImageProperties(const image::ImageHandle& im, sedeen::algorithm::ImageInfo *imageinfo, 
+        const sedeen::SizeF &trSpacing = sedeen::SizeF(1.0,1.0));
 
 
     bool SetImageInfo(int index);
 
     ///Create text for a report containing the properties of 
-    std::string generateImagePropertiesReport(ImageProperties ip);
+    const std::string generateImagePropertiesReport(const ImageProperties &ip);
 
 
 private:
     DisplayAreaParameter m_displayArea;
     ImageListParameter m_imageList;
 
-    GraphicItemParameter m_regionToProcess; //single output region
+    //GraphicItemParameter m_regionToProcess; //single output region
 
+
+    double m_thresholdParameter; //change this to a DoubleParameter later
 
 
     /// User defined Threshold value.
@@ -108,6 +121,25 @@ private:
     TextResult m_outputText;
     std::string m_report;
 
+
+
+
+    //Split this out into another plugin when I understand what I'm doing
+
+    ///The mask image pointer (e.g. DAPI)
+    std::shared_ptr<sedeen::image::Image> m_maskImage;
+    ///The source image pointer (to apply the mask to)
+    std::shared_ptr<sedeen::image::Image> m_sourceImage;
+
+    ///Properties of the mask image, obtained from the Image and ImageInfo objects
+    ImageProperties m_maskImageProperties;
+    ///Properties of the source image, obtained from the Image and ImageInfo objects
+    ImageProperties m_sourceImageProperties;
+
+
+
+
+
     ///The test image pointer (modified image)
     std::shared_ptr<sedeen::image::Image> m_testImage;
     ///The reference image pointer (to compare test images against)
@@ -117,6 +149,8 @@ private:
     ImageProperties m_testImageProperties;
     ///Properties of the reference image, obtained from the Image and ImageInfo objects
     ImageProperties m_refImageProperties;
+
+
 
 
     /// The intermediate image factory after thresholding

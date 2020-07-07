@@ -19,6 +19,26 @@ FIND_PACKAGE( SEDEENSDK REQUIRED
         "$ENV{${PROGRAMFILESX86}}/Sedeen Viewer SDK/v5.5.0.20200610/msvc2017"
         "$ENV{PROGRAMFILES}/Sedeen Viewer SDK/v5.5.0.20200610/msvc2017" )
 
+# Load the included OpenCV libs
+FIND_PACKAGE(SEDEENSDK_OPENCV REQUIRED
+  HINTS ../../..
+        "$ENV{${PROGRAMFILESX86}}/Sedeen Viewer SDK/v5.5.0.20200610/msvc2017"
+        "$ENV{PROGRAMFILES}/Sedeen Viewer SDK/v5.5.0.20200610/msvc2017" )
+
+# Fetch TinyXML2 files. Do not build as a subproject
+FetchContent_Declare(
+  TinyXML2
+  GIT_REPOSITORY https://github.com/leethomason/tinyxml2.git
+  GIT_TAG 61a4c7d507322c9f494f5880d4c94b60e4ce9590
+)
+# Check if the tinyxml2 files have already been populated
+FetchContent_GetProperties(TinyXML2)
+STRING(TOLOWER "TinyXML2" TinyXML2Name)
+IF(NOT ${TinyXML2Name}_POPULATED)
+  #Fetch TinyXML2 using the details from FetchContent_Declare 	
+  FetchContent_Populate(TinyXML2)
+ENDIF()
+
 #Fetch the OpticalDensityThreshold respository. Do not build as a subproject
 FetchContent_Declare(
   OpticalDensityThreshold
@@ -60,21 +80,31 @@ SET(CREATE_STAIN_VECTOR_PROFILE_DIR ${${CreateStainVectorProfileName}_SOURCE_DIR
 
 INCLUDE_DIRECTORIES( ${INCLUDE_DIRECTORIES} 
                      ${SEDEENSDK_INCLUDE_DIR} 
+                     ${SEDEENSDK_OPENCV_INCLUDE_DIR}
+                     ${${TinyXML2Name}_SOURCE_DIR}
                      ${OPTICAL_DENSITY_THRESHOLD_DIR}
                      ${STAIN_ANALYSIS_DIR}
                      ${CREATE_STAIN_VECTOR_PROFILE_DIR}  
                      ) 
 
-LINK_DIRECTORIES( ${LINK_DIRECTORIES} ${SEDEENSDK_LIBRARY_DIR} ) 
+LINK_DIRECTORIES( ${LINK_DIRECTORIES} 
+                  ${SEDEENSDK_LIBRARY_DIR} 
+                  ${SEDEENSDK_OPENCV_LIBRARY_DIR} 
+                  ) 
 
 # Build the code into a module library
 ADD_LIBRARY( ${PROJECT_NAME} MODULE 
              ${PROJECT_NAME}.cpp 
              ${PROJECT_NAME}.h 
+             ${${TinyXML2Name}_SOURCE_DIR}/tinyxml2.h 
+             ${${TinyXML2Name}_SOURCE_DIR}/tinyxml2.cpp
              )
 
 # Link the library against the Sedeen SDK libraries
-TARGET_LINK_LIBRARIES( ${PROJECT_NAME} ${SEDEENSDK_LIBRARIES} )
+TARGET_LINK_LIBRARIES( ${PROJECT_NAME} 
+                       ${SEDEENSDK_LIBRARIES} 
+                       ${SEDEENSDK_OPENCV_LIBRARIES}
+                       )
 
 #Create or update the .info file in the build directory
 STRING( TIMESTAMP DATE_CREATED_TEXT "%Y-%m-%d" )
@@ -97,4 +127,7 @@ IF( ${SEDEEN_FOUND} )
     DESTINATION "${PLUGIN_DESTINATION_DIR}")
   INSTALL(FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.info"
     DESTINATION "${PLUGIN_DESTINATION_DIR}")
+  INSTALL(DIRECTORY "${SEDEENSDK_DIR}/bin/" 
+     DESTINATION "${PLUGIN_DESTINATION_DIR}" 
+     FILES_MATCHING PATTERN "opencv*0.dll" )
 ENDIF()
