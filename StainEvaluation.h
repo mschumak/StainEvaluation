@@ -90,14 +90,33 @@ private:
     image::RawImage GetDisplayImage(const image::ImageHandle& im);
 
 
-
-
-
     ImageProperties GetImageProperties(const image::ImageHandle& im, sedeen::algorithm::ImageInfo *imageinfo, 
         const sedeen::SizeF &trSpacing = sedeen::SizeF(1.0,1.0));
 
 
-    bool SetImageInfo(int index);
+    ///Define the save file dialog options outside of init
+    sedeen::file::FileDialogOptions defineSaveFileDialogOptions();
+
+    ///Get the expected number of pixels to be saved in an output file cropped to the given Rect.
+    double EstimateOutputImageSize(const sedeen::Rect &r);
+    ///Get a human-readable estimate of the storage space required for an output file (with 4 bytes per pixel).
+    std::string EstimateImageStorageSize(const double &pix);
+
+
+
+    ///Save the image with a given Factory within a given Rect to a TIF/PNG/BMP/GIF/JPG flat format file
+    bool SaveCroppedImageToFile(std::shared_ptr<image::tile::Factory> factory, const std::string &p, const sedeen::Rect &rect);
+
+    ///Given a full file path as a string, identify if there is an extension and return it
+    const std::string getExtension(const std::string &p);
+
+    ///Search the m_saveFileExtensionText vector for a given extension, and return the index, or -1 if not found
+    const int findExtensionIndex(const std::string &x) const;
+
+    ///Check if the file exists and accessible for reading or writing, or that the directory to write to exists; copied from StainProfile
+    bool checkFile(const std::string &fileString, const std::string &op);
+
+
 
     ///Create text for a report containing the properties of 
     const std::string generateImagePropertiesReport(const ImageProperties &ip);
@@ -107,14 +126,19 @@ private:
     DisplayAreaParameter m_displayArea;
     ImageListParameter m_imageList;
 
-    //GraphicItemParameter m_regionToProcess; //single output region
+
+    /// User defined threshold to apply to the mask image
+    algorithm::DoubleParameter m_maskThreshold;
 
 
-    double m_thresholdParameter; //change this to a DoubleParameter later
 
 
-    /// User defined Threshold value.
-    //algorithm::DoubleParameter m_threshold;
+
+    ///User choice of file name for the image cropped to the intersection of source and mask
+    SaveFileDialogParameter m_saveCroppedImageFileAs;
+    ///User choice of file name for the image with the mask image applied
+    SaveFileDialogParameter m_saveMaskedImageFileAs;
+
 
     /// The output result
     ImageResult m_result;
@@ -136,8 +160,11 @@ private:
     ///Properties of the source image, obtained from the Image and ImageInfo objects
     ImageProperties m_sourceImageProperties;
 
-
-
+    ///Store the rectangle that is the intersection of the mask and source outer rectangles
+    sedeen::Rect m_maskSourceIntersectionRect;
+ 
+    ///Apply a crop and pixel mask to the source image
+    std::shared_ptr<image::tile::Factory> m_Mask_factory;
 
 
     ///The test image pointer (modified image)
@@ -151,13 +178,16 @@ private:
     ImageProperties m_refImageProperties;
 
 
-
-
-    /// The intermediate image factory after thresholding
-    //std::shared_ptr<image::tile::Factory> m_ODThreshold_factory;
-
 private:
     //Member variables
+
+
+    std::vector<std::string> m_saveFileExtensionText;
+    double m_maskThresholdDefaultVal;
+    double m_maskThresholdMaxVal;
+    ///Number of pixels in an image to be saved over which the user will receive a warning.
+    double m_pixelWarningThreshold;
+
 
 };
 
