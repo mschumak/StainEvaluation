@@ -78,7 +78,7 @@ private:
     virtual void run();
 
 
-    ///The actual comparison this plugin is intended to accomplish
+    ///The actual comparison this plugin is intended to accomplish (next)
     bool buildTestAndReferencePipeline();
 
     ///Create a reference image by selecting pixels from an image using a pixel mask
@@ -87,22 +87,23 @@ private:
 
     
 
-    image::RawImage GetDisplayImage(const image::ImageHandle& im);
+    //image::RawImage GetDisplayImage(const image::ImageHandle& im);
 
-
+    ///Collect image information from the Image, Sedeen's ImageInfo, and additional pixel spacing information
     ImageProperties GetImageProperties(const image::ImageHandle& im, sedeen::algorithm::ImageInfo *imageinfo, 
         const sedeen::SizeF &trSpacing = sedeen::SizeF(1.0,1.0));
 
 
     ///Define the save file dialog options outside of init
-    sedeen::file::FileDialogOptions defineSaveFileDialogOptions();
+    sedeen::file::FileDialogOptions defineSaveFileDialogOptions(const std::string &capt = std::string());
 
     ///Get the expected number of pixels to be saved in an output file cropped to the given Rect.
     double EstimateOutputImageSize(const sedeen::Rect &r);
     ///Get a human-readable estimate of the storage space required for an output file (with 4 bytes per pixel).
     std::string EstimateImageStorageSize(const double &pix);
 
-
+    ///Check whether a given full file path can be written to and has the right extension; sends report with member variable
+    bool checkImageSaveProperties(const std::string &path, const std::string &rep, const std::string &desc);
 
     ///Save the image with a given Factory within a given Rect to a TIF/PNG/BMP/GIF/JPG flat format file
     bool SaveCroppedImageToFile(std::shared_ptr<image::tile::Factory> factory, const std::string &p, const sedeen::Rect &rect);
@@ -116,7 +117,8 @@ private:
     ///Check if the file exists and accessible for reading or writing, or that the directory to write to exists; copied from StainProfile
     bool checkFile(const std::string &fileString, const std::string &op);
 
-
+    ///Use the corners of a Rect object to define a 4-vertex Polygon
+    Polygon RectToPolygon(const Rect &rect);
 
     ///Create text for a report containing the properties of 
     const std::string generateImagePropertiesReport(const ImageProperties &ip);
@@ -126,26 +128,19 @@ private:
     DisplayAreaParameter m_displayArea;
     ImageListParameter m_imageList;
 
-
     /// User defined threshold to apply to the mask image
     algorithm::DoubleParameter m_maskThreshold;
-
-
-
-
 
     ///User choice of file name for the image cropped to the intersection of source and mask
     SaveFileDialogParameter m_saveCroppedImageFileAs;
     ///User choice of file name for the image with the mask image applied
     SaveFileDialogParameter m_saveMaskedImageFileAs;
 
-
-    /// The output result
+    /// The outputs
     ImageResult m_result;
     TextResult m_outputText;
+    OverlayResult m_overlayResult;
     std::string m_report;
-
-
 
 
     //Split this out into another plugin when I understand what I'm doing
@@ -188,6 +183,18 @@ private:
     ///Number of pixels in an image to be saved over which the user will receive a warning.
     double m_pixelWarningThreshold;
 
+
+
+    struct GraphicInfo {
+        int red;
+        int green;
+        int blue;
+        std::string region;
+        std::string description;
+        std::string type;
+        std::vector<PointF> points;
+        GraphicStyle style;
+    };
 
 };
 

@@ -76,6 +76,7 @@ StainEvaluation::StainEvaluation()
     //Output objects
     m_result(),
     m_outputText(),
+    m_overlayResult(),
     m_report(""),
     m_maskThresholdDefaultVal(20.0),
     m_maskThresholdMaxVal(255.0),
@@ -116,20 +117,28 @@ void StainEvaluation::init(const image::ImageHandle& image) {
         false);
 
     //Allow the user to choose where to save the cropped and masked image files (separately)
-    sedeen::file::FileDialogOptions saveFileDialogOptions = defineSaveFileDialogOptions();
+    sedeen::file::FileDialogOptions croppedSaveOptions = defineSaveFileDialogOptions("Save cropped image as...");
     m_saveCroppedImageFileAs = createSaveFileDialogParameter(*this, "Save Cropped Image As...",
         "Save the cropped source image, cropped to the bounds of the intersection of the source and mask images.",
-        saveFileDialogOptions, true);
+        croppedSaveOptions, true);
 
+    sedeen::file::FileDialogOptions maskedSaveOptions = defineSaveFileDialogOptions("Save masked limage as...");
     m_saveMaskedImageFileAs = createSaveFileDialogParameter(*this, "Save Masked Image As...",
         "Save the image with the mask and cropping applied.",
-        saveFileDialogOptions, true);
+        maskedSaveOptions, true);
 
-    // Bind result
+    // Bind output results
     m_outputText = createTextResult(*this, "Text Result");
-    m_result = createImageResult(*this, " StainEvaluationResult");
+    m_result = createImageResult(*this, "StainEvaluationResult");
+    m_overlayResult = createOverlayResult(*this);
 
 }//end init
+
+
+
+
+
+
 
 void StainEvaluation::run() {
     //Define an empty report string
@@ -157,9 +166,6 @@ void StainEvaluation::run() {
         m_outputText.sendText(report);
         return;
     }
-    //additional image checks?
-    //check whether the images intersect, provide helpful error message if not
-
 
     //This is for applying the mask image to a source (DAPI on unseparated image)
     bool pipeline_changed = buildApplyMaskPipeline();
@@ -184,60 +190,21 @@ void StainEvaluation::run() {
         //Check that the file locations for the cropped and masked images can be written to
         //Get the full path file names from the file dialog parameters
 
-
-
         //Check that the location specified for the cropped image can be written to
         //Get the full path file name from the file dialog parameter
         std::string croppedFilePath;
-        sedeen::algorithm::parameter::SaveFileDialog::DataType fileDialogDataType = this->m_saveCroppedImageFileAs;
-        croppedFilePath = fileDialogDataType.getFilename();
-        //Is the file field blank?
-        if (croppedFilePath.empty()) {
-            report.append("\nThere is no location given for where to save the cropped image. Please enter a file name.\n");
-            croppedSaveResult = false;
-        }
-        else {
-            //Does it exist or can it be created, and can it be written to?
-            bool validFileCheck = checkFile(croppedFilePath, "w");
-            if (!validFileCheck) {
-                std::string outMessage("The file name selected for the cropped image cannot be written to.");
-                outMessage.append(" Please choose another name, or check the permissions of the directory.");
-                m_outputText.sendText(outMessage);
-                return;
-            }
-            //Does it have a valid extension? RawImage.save relies on the extension to determine save format
-            std::string theExt = getExtension(outputFilePath);
-            int extensionIndex = findExtensionIndex(theExt);
-            //findExtensionIndex returns -1 if not found
-            if (extensionIndex == -1) {
-                std::stringstream ss;
-                ss << "The extension of the file is not a valid type. The file extension must be: ";
-                auto vec = m_saveFileExtensionText;
-                for (auto it = vec.begin(); it != vec.end() - 1; ++it) {
-                    ss << (*it) << ", ";
-                }
-                std::string last = vec.back();
-                ss << "or " << last << ". Choose a correct file type and try again." << std::endl;
-                m_outputText.sendText(ss.str());
-                return;
-            }
-        }
+        sedeen::algorithm::parameter::SaveFileDialog::DataType croppedDialogDataType = this->m_saveCroppedImageFileAs;
+        croppedFilePath = croppedDialogDataType.getFilename();
+        bool croppedFileCheck = checkImageSaveProperties(croppedFilePath, report, "cropped");
+        if (!croppedFileCheck) { return; }
 
-
-
-
-        bool croppedSaveResult = false;
-
-
-
-
-
-
-
-
-
-
-
+        //Check that the location specified for the masked image can be written to
+        //Get the full path file name from the file dialog parameter
+        std::string maskedFilePath;
+        sedeen::algorithm::parameter::SaveFileDialog::DataType maskedDialogDataType = this->m_saveMaskedImageFileAs;
+        maskedFilePath = maskedDialogDataType.getFilename();
+        bool maskedFileCheck = checkImageSaveProperties(maskedFilePath, report, "masked");
+        if (!maskedFileCheck) { return; }
 
 
         //This is where the magic happens.
@@ -245,14 +212,10 @@ void StainEvaluation::run() {
         //m_result.update(m_Mask_factory, m_displayArea, *this);
         //}
 
-
         // Update the output text report
         if (false == askedToStop()) {
-            //Save the cropped and masked images to their respective files (file error checks performed above)
-            bool croppedSaveResult = false;
-            bool maskedSaveResult = false;
-
-
+            //Save the cropped image to file (file error checks performed above)
+            bool croppedSaveResult = SaveCroppedImageToFile(image()->getFactory(), croppedFilePath, m_maskSourceIntersectionRect); //THIS DOES NOT WORK
             //Check that the cropped image was saved successfully
             std::stringstream sc;
             if (croppedSaveResult) {
@@ -264,14 +227,18 @@ void StainEvaluation::run() {
                 report.append(sc.str());
             }
 
-
-            //Save the masked image to file
-
-            //stuff here.
-
-
-
-            
+            //Save the masked image to file (file error checks performed above)
+            bool maskedSaveResult = SaveCroppedImageToFile(image()->getFactory(), maskedFilePath, m_maskSourceIntersectionRect); //THIS DOES NOT WORK  
+            //Check that the masked image was saved successfully
+            std::stringstream sm;
+            if (maskedSaveResult) {
+                sm << std::endl << "Masked image saved as " << maskedFilePath << std::endl;
+                report.append(sm.str());
+            }
+            else {
+                sm << std::endl << "Saving the masked image failed. Please check the file name and directory permissions." << std::endl;
+                report.append(sm.str());
+            }
 
             //Send the final report to the results window
             m_outputText.sendText(report);
@@ -284,6 +251,12 @@ void StainEvaluation::run() {
         m_Mask_factory.reset();
     }
 }//end run
+
+
+Polygon StainEvaluation::RectToPolygon(const Rect &rect) {
+
+
+}//end RectToPolygon
 
 
 
@@ -331,8 +304,7 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         if (!m_maskImage) {
             throw std::runtime_error("Could not open the mask image: " + file::Location(maskImageLocation).getFilename());
         }
-
-        //Temp approach to this
+        //TEMP approach to this
         //If one exists, open the session file for the image
         //The problem is that new changes to the Pixel Spacing boxes are not stored here yet
         sedeen::Session maskSession = sedeen::Session(maskImageLocation);
@@ -342,8 +314,6 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         sedeen::SizeF maskTrSpacing = maskSession.getPixelSize();
         //Fill the ImageProperties struct for the test image
         m_maskImageProperties = GetImageProperties(m_maskImage, &maskImageInfo, maskTrSpacing);
-
-
 
         //Source image info, properties, and Image object pointer (workaround)
         ImageInfo sourceImageInfo = m_imageList.info(sourceImageIndex);
@@ -355,7 +325,7 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         if (!m_sourceImage) {
             throw std::runtime_error("Could not open the source image: " + file::Location(sourceImageLocation).getFilename());
         }
-        //Temp approach to this
+        //TEMP approach to this
         //If one exists, open the session file for the image
         //The problem is that new changes to the Pixel Spacing boxes are not stored here yet
         sedeen::Session sourceSession = sedeen::Session(sourceImageLocation);
@@ -367,104 +337,137 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         m_sourceImageProperties = GetImageProperties(m_sourceImage, &sourceImageInfo, sourceTrSpacing);
 
 
-
-
-
-
-
         //Get the containing rectangles of the images
         sedeen::Rect maskContainingRect = sedeen::image::rect(m_maskImage, 0);
         sedeen::Rect sourceContainingRect = sedeen::image::rect(m_sourceImage, 0);
+                
+        //Create Polygons from the mask and source Rect objects
+        Polygon maskPolygon = RectToPolygon(maskContainingRect);
+        Polygon sourcePolygon = RectToPolygon(sourceContainingRect);
+
+        //Draw the mask polygon 
+
+        double maskXMin = static_cast<double>(maskContainingRect.x());
+        double maskYMin = static_cast<double>(maskContainingRect.y());
+        double maskXMax = static_cast<double>(xMax(maskContainingRect));
+        double maskYMax = static_cast<double>(yMax(maskContainingRect));
+        auto maskVertices = std::vector<PointF>();
+        maskVertices.push_back(PointF(maskXMin, maskYMax));
+        maskVertices.push_back(PointF(maskXMax, maskYMax));
+        maskVertices.push_back(PointF(maskXMax, maskYMin));
+        maskVertices.push_back(PointF(maskXMin, maskYMin));
+        //Size maskSize;
+        //maskSize.setWidth(maskXMax - maskXMin);
+        //maskSize.setHeight(maskYMax - maskYMin);
+        auto maskGraphicStyle = GraphicStyle();
+        maskGraphicStyle.setLabel("Mask image border");
+        Pen maskPen = Pen(sedeen::RGBColor(255, 255, 0), 3, LineStyle::Dashed);
+        maskGraphicStyle.setPen(maskPen);
+        //Rectangle maskRectangle = Rectangle(maskVertices);
+        //m_overlayResult.drawRectangle(maskRectangle, maskGraphicStyle, 
+        //    "Mask image border", "The border around the mask image");
+
+        Polygon maskBorder = Polygon(maskVertices);
+        sedeen::TransformDirection t = sedeen::TransformDirection::Forward;
+
+
+        m_overlayResult.drawPolygon(maskBorder, maskGraphicStyle, "Mask image border", std::string());
+        //drawRectangle(maskRectangle, maskGraphicStyle, 
+        //    "Mask image border", "The border around the mask image");
+
+
+        //HERE: have to transform the rectangles
+
+        //auto spacingRatio = sedeen::SizeF(t_attr.spacing.width() / s_attr.spacing.width(),
+        //    t_attr.spacing.height() / s_attr.spacing.height());
+
+        //maskContainingRect.x();
+        //maskContainingRect.y();
+        //SRTTransform identity_transform(0, 0, 1, 1, 0, 0, 0);
+
+
+
+        //Convert to graphics, transform, intersect, get containing rect?
+
+
+        //Draw each rectangle
+
+        //m_overlayResult;
+
+        
+        
+        
+        
+        
+
+
+        //Make a RectToGraphic method?
+        //conversion back can be just getting the containingrect
+        
+        
         //Find the intersection of the two rectangles
-        sedeen::Rect intersectionRect = sedeen::intersection(maskContainingRect, sourceContainingRect);
-        //If the intersection is empty, set doProcessing to false
-        bool intersectionEmpty = sedeen::isEmpty(intersectionRect);
+        m_maskSourceIntersectionRect = sedeen::intersection(maskContainingRect, sourceContainingRect);
+
+
+        //Draw the intersection
+        
+
+
+
+
+        //If the intersection is empty, 
+        bool intersectionEmpty = sedeen::isEmpty(m_maskSourceIntersectionRect);
         if (intersectionEmpty) {
-            pipeline_changed = false;
             //Set the member factory equal to the source factory
             m_Mask_factory = image()->getFactory();
-            return pipeline_changed;
+            pipeline_changed = false;
         }
         else {
+            //Crop
+            //Threshold
+            //Resample
+            //Mask
+            //Save both cropped
 
+            //Pixel-to-pixel operations
 
-            //Crop the source image to the intersection rectangle
-
-            //What does ROICropper do?
-
-
-
-
-
-
-
-
-
-
-
-        }
-
-
-
-        //Threshold
-        //Crop
-        //Resample
-        //Mask
-        //Save both cropped
-
-        //Pixel-to-pixel operations
+            //Constrain processing to the intersection rectangle
+            auto source_factory = image()->getFactory();
+            //auto constrained_factory = std::make_shared<RegionFactory>(source_factory, m_maskSourceIntersectionRect);
 
 
 
 
+            //auto display_resolution = getDisplayResolution(image(), m_displayArea);
+
+            //Get the Behavior value from the m_retainment
+            //Scale down the threshold to create more precision
+            //auto threshold_kernel =
+            //    std::make_shared<image::tile::ODThresholdKernel>(m_threshold / 100.0,
+            //    behaviorVal, theWeights);
+
+            // Create a Factory for the composition of these Kernels
+            //auto non_cached_factory =
+            //    std::make_shared<FilterFactory>(source_factory, threshold_kernel);
+
+            // Wrap resulting Factory in a Cache for speedy results
+            //m_ODThreshold_factory =
+            //    std::make_shared<Cache>(non_cached_factory, RecentCachePolicy(30));
 
 
-        //Try cropping
 
 
-     
+            // Wrap resulting Factory in a Cache for speedy results
+            m_Mask_factory = image()->getFactory();   //std::make_shared<Cache>(constrained_factory, RecentCachePolicy(30));
 
-
-
-
-
-
-
-
-        //auto display_resolution = getDisplayResolution(image(), m_displayArea);
-
-        //Get the Behavior value from the m_retainment
-        //Scale down the threshold to create more precision
-        //auto threshold_kernel =
-        //    std::make_shared<image::tile::ODThresholdKernel>(m_threshold / 100.0,
-        //    behaviorVal, theWeights);
-
-        // Create a Factory for the composition of these Kernels
-        //auto non_cached_factory =
-        //    std::make_shared<FilterFactory>(source_factory, threshold_kernel);
-
-        // Wrap resulting Factory in a Cache for speedy results
-        //m_ODThreshold_factory =
-        //    std::make_shared<Cache>(non_cached_factory, RecentCachePolicy(30));
-
-        //pipeline_changed = true;
-
-         
+            pipeline_changed = true;
+        }  
     }//end if parameter values changed
-
-    //
-    // Constrain processing to the region of interest provided, if set
-    //std::shared_ptr<GraphicItemBase> region = m_regionToProcess;
-    //if (pipeline_changed && (nullptr != region)) {
-    //    // Constrain the output of the pipeline to the region of interest provided
-    //    auto constrained_factory = std::make_shared<RegionFactory>(m_ODThreshold_factory, region->graphic());
-
-    //    // Wrap resulting Factory in a Cache for speedy results
-    //    m_ODThreshold_factory = std::make_shared<Cache>(constrained_factory, RecentCachePolicy(30));
-    //}
 
     return pipeline_changed;
 }//end buildApplyMaskPipeline
+
+
 
 
 
@@ -485,7 +488,7 @@ ImageProperties StainEvaluation::GetImageProperties(const image::ImageHandle& im
     imProps.visibility = imageinfo->visible;
     imProps.location = imageinfo->location;
 
-    //The pixel spacing as set in the Transform box. 
+    //The pixel spacing as set in the Transform box.
     imProps.tr_pixel_spacing = trSpacing;
 
     //Get the ColorSpace for the image
@@ -552,21 +555,21 @@ const std::string StainEvaluation::generateImagePropertiesReport(const ImageProp
 
 
 
-image::RawImage StainEvaluation::GetDisplayImage(const image::ImageHandle& im)
-{
-    DisplayRegion display_region = m_displayArea;
-    // Get the region currently on screen
-
-    auto displayRegionScale = getDisplayScale(display_region);
-    auto imDisplayIterator = getIterator(im, display_region);
-    Point displayRegionPosition(imDisplayIterator.x(), imDisplayIterator.y());
-    auto imageDisplaySize = display_region.output_size;
-    Rect imageDisplayRect(displayRegionPosition, imageDisplaySize);
-
-    image::tile::Compositor compositor(im->getFactory());
-    auto input = compositor.getImage(imageDisplayRect, display_region.output_size);
-    return input;
-}//end GetDisplayImage
+//image::RawImage StainEvaluation::GetDisplayImage(const image::ImageHandle& im)
+//{
+//    DisplayRegion display_region = m_displayArea;
+//    // Get the region currently on screen
+//
+//    auto displayRegionScale = getDisplayScale(display_region);
+//    auto imDisplayIterator = getIterator(im, display_region);
+//    Point displayRegionPosition(imDisplayIterator.x(), imDisplayIterator.y());
+//    auto imageDisplaySize = display_region.output_size;
+//    Rect imageDisplayRect(displayRegionPosition, imageDisplaySize);
+//
+//    image::tile::Compositor compositor(im->getFactory());
+//    auto input = compositor.getImage(imageDisplayRect, display_region.output_size);
+//    return input;
+//}//end GetDisplayImage
 
 
 
@@ -576,9 +579,14 @@ image::RawImage StainEvaluation::GetDisplayImage(const image::ImageHandle& im)
 
 
 ///Define the save file dialog options outside of init
-sedeen::file::FileDialogOptions StainEvaluation::defineSaveFileDialogOptions() {
+sedeen::file::FileDialogOptions StainEvaluation::defineSaveFileDialogOptions(const std::string &capt /*= std::string()*/) {
     sedeen::file::FileDialogOptions theOptions;
-    theOptions.caption = "Save cropped source image as...";
+    if (!capt.empty()) {
+        theOptions.caption = capt;
+    }
+    else {
+        theOptions.caption = "Save image as...";
+    }
     //theOptions.flags = sedeen::file::FileDialogFlags:: None currently needed
     //theOptions.startDir; //no current preference
     //Define the file type dialog filter
@@ -595,7 +603,6 @@ sedeen::file::FileDialogOptions StainEvaluation::defineSaveFileDialogOptions() {
 
 double StainEvaluation::EstimateOutputImageSize(const sedeen::Rect &r) {
     double estSize;
-    //If a region of interest has been set, use the 
     if (!sedeen::isEmpty(r)) {
         Rect rect = r;
         double sizeFromRect = static_cast<double>(rect.height())
@@ -635,6 +642,53 @@ std::string StainEvaluation::EstimateImageStorageSize(const double &pix) {
     }
     return ss.str();
 }//end EstimateImageStorageSize
+
+bool StainEvaluation::checkImageSaveProperties(const std::string &path, const std::string &rep, const std::string &desc) {
+    std::string moreReport(rep);
+    const bool successVal = true;
+    const bool failVal = false;
+    //Is the path string blank?
+    if (path.empty()) {
+        moreReport.append("\nThere is no location given for where to save the ");
+        moreReport.append(desc);
+        moreReport.append(" image. Please enter a file name.\n");
+        m_outputText.sendText(moreReport);
+        return failVal;
+    }
+    else {
+        //Does it exist or can it be created, and can it be written to?
+        bool validFileCheck = checkFile(path, "w");
+        if (!validFileCheck) {
+            moreReport.append("The file name selected for the ");
+            moreReport.append(desc);
+            moreReport.append(" image cannot be written to.");
+            moreReport.append(" Please choose another name, or check the permissions of the directory.");
+            m_outputText.sendText(moreReport);
+            return failVal;
+        }
+        //Does it have a valid extension? RawImage.save relies on the extension to determine save format
+        std::string theExt = getExtension(path);
+        int extensionIndex = findExtensionIndex(theExt);
+        //findExtensionIndex returns -1 if not found
+        if (extensionIndex == -1) {
+            std::stringstream ss;
+            ss << "The extension of the file for the ";
+            ss << desc;
+            ss << " image is not a valid type.The file extension must be : ";
+            auto vec = m_saveFileExtensionText;
+            for (auto it = vec.begin(); it != vec.end() - 1; ++it) {
+                ss << (*it) << ", ";
+            }
+            std::string last = vec.back();
+            ss << "or " << last << ". Choose a correct file type and try again." << std::endl;
+            moreReport.append(ss.str());
+            m_outputText.sendText(moreReport);
+            return failVal;
+        }
+    }
+    //All checks passed
+    return successVal;
+}//end checkImageSaveProperties
 
 bool StainEvaluation::SaveCroppedImageToFile(std::shared_ptr<image::tile::Factory> factory, 
     const std::string &p, const sedeen::Rect &rect) {
