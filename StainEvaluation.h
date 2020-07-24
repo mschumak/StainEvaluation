@@ -35,6 +35,7 @@
 #include <global/ColorSpace.h>
 #include <global/geometry/SRTTransform.h>
 #include <global/geometry/SizeF.h>
+#include <global/geometry/RectF.h>
 #include <archive/Session.h>
 
 namespace sedeen {
@@ -43,7 +44,7 @@ namespace tile {
 } // namespace tile
 
 namespace algorithm {
-///struct to hold the image properties
+///struct to hold properties of an image obtained from multiple sources of information
 struct ImageProperties
 {
     std::basic_string <char> location;
@@ -59,8 +60,11 @@ struct ImageProperties
 
     int nlevels;
     ///Pixel size as read from the image
-    sedeen::SizeF  image_pixel_size;
+    sedeen::SizeF  image_pixel_size; //mm units
     sedeen::Size   image_size;
+
+    //Unit conversion (between millimeters and micrometers)
+    double um_per_mm = 1000.0;
 };
 
 ///StainEvaluation plugin for Sedeen Viewer
@@ -117,8 +121,16 @@ private:
     ///Check if the file exists and accessible for reading or writing, or that the directory to write to exists; copied from StainProfile
     bool checkFile(const std::string &fileString, const std::string &op);
 
-    ///Use the corners of a Rect object to define a 4-vertex Polygon
-    Polygon RectToPolygon(const Rect &rect);
+    ///Use the corners of a RectF object to define a 4-vertex Polygon
+    Polygon RectFToPolygon(const RectF &rectf);
+    ///Transform a Polygon
+    Polygon TransformPolygon(const Polygon &poly, const ImageProperties &ip, const TransformDirection &t);
+
+    ///Change the frame of reference of a Polygon from an initial image to a final image space
+    Polygon ChangeReferenceFrame(const Polygon &poly, const ImageProperties &initial, const ImageProperties &final);
+    ///Change the frame of reference of a PointF from an initial image to a final image space
+    PointF ChangeReferenceFrame(const PointF &pf, const ImageProperties &initial, const ImageProperties &final);
+
 
     ///Create text for a report containing the properties of 
     const std::string generateImagePropertiesReport(const ImageProperties &ip);
@@ -185,16 +197,6 @@ private:
 
 
 
-    struct GraphicInfo {
-        int red;
-        int green;
-        int blue;
-        std::string region;
-        std::string description;
-        std::string type;
-        std::vector<PointF> points;
-        GraphicStyle style;
-    };
 
 };
 

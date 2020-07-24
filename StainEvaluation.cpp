@@ -253,10 +253,58 @@ void StainEvaluation::run() {
 }//end run
 
 
-Polygon StainEvaluation::RectToPolygon(const Rect &rect) {
+
+Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProperties &ip,
+    const sedeen::TransformDirection &t) {
+    if (poly.isNull()) { return Polygon(); }
+    //Create a temporary working Polygon
+    Polygon tempPolygon(poly);
+    //Get the transform from the ImageProperties
+    sedeen::SRTTransform ip_transform = ip.sedeen_transform;
+    sedeen::SizeF tr_box_pixel_spacing = ip.tr_pixel_spacing;
+    sedeen::SizeF image_pixel_size = ip.image_pixel_size;
+
+    //TEMP solution: adjust the scale factors by the pixel spacing values
+    //before applying the SRTTransform
+
+    //How do I transform from one space to another?
+
+    return Polygon();
+}//end TransformPolygon
 
 
-}//end RectToPolygon
+
+
+
+PointF StainEvaluation::ChangeReferenceFrame(const PointF &pf, 
+    const ImageProperties &initial, const ImageProperties &final) {
+    //SRTTransform identityTransform(0, 0, 1, 1, 0, 0, 0);
+    SRTTransform initialTransform = initial.sedeen_transform;
+    SRTTransform finalTransform = final.sedeen_transform;
+
+
+    pick up here!!!
+
+
+    //Centers are aligned in the view window, but center values are based on image size
+    PointF centerDiff = PointF(finalTransform.center().getX()*4. - initialTransform.center().getX(),
+        finalTransform.center().getY()*4. - initialTransform.center().getY());
+
+    //PointF initialTopLeftCorner = PointF( - initial.image_size.width() / 2.0,
+    //    initialTransform.center().getY() + initial.image_size.height() / 2.0);
+    //PointF finalTopLeftCorner = PointF( - final.image_size.width() / 2.0,
+    //    finalTransform.center().getY() + final.image_size.height() / 2.0);
+    //PointF topLeftDiff = PointF(finalTopLeftCorner.getX() - initialTopLeftCorner.getX(),
+    //    finalTopLeftCorner.getY() - initialTopLeftCorner.getY());
+    //Add the coordinate system translation to the input point
+    PointF outPoint = PointF(pf.getX() + centerDiff.getX(), pf.getY() + centerDiff.getY());
+    return outPoint;
+}//end ChangeReferenceFrame (PointF)
+
+
+
+
+
 
 
 
@@ -337,43 +385,26 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         m_sourceImageProperties = GetImageProperties(m_sourceImage, &sourceImageInfo, sourceTrSpacing);
 
 
-        //Get the containing rectangles of the images
-        sedeen::Rect maskContainingRect = sedeen::image::rect(m_maskImage, 0);
-        sedeen::Rect sourceContainingRect = sedeen::image::rect(m_sourceImage, 0);
+        //Get the containing rectangles of the images with double-precision element data
+        sedeen::RectF maskContainingRectF = sedeen::RectF(sedeen::image::rect(m_maskImage, 0));
+        sedeen::RectF sourceContainingRectF = sedeen::RectF(sedeen::image::rect(m_sourceImage, 0));
                 
         //Create Polygons from the mask and source Rect objects
-        Polygon maskPolygon = RectToPolygon(maskContainingRect);
-        Polygon sourcePolygon = RectToPolygon(sourceContainingRect);
+        Polygon maskPolygon = RectFToPolygon(maskContainingRectF);
+        Polygon sourcePolygon = RectFToPolygon(sourceContainingRectF);
 
-        //Draw the mask polygon 
-
-        double maskXMin = static_cast<double>(maskContainingRect.x());
-        double maskYMin = static_cast<double>(maskContainingRect.y());
-        double maskXMax = static_cast<double>(xMax(maskContainingRect));
-        double maskYMax = static_cast<double>(yMax(maskContainingRect));
-        auto maskVertices = std::vector<PointF>();
-        maskVertices.push_back(PointF(maskXMin, maskYMax));
-        maskVertices.push_back(PointF(maskXMax, maskYMax));
-        maskVertices.push_back(PointF(maskXMax, maskYMin));
-        maskVertices.push_back(PointF(maskXMin, maskYMin));
-        //Size maskSize;
-        //maskSize.setWidth(maskXMax - maskXMin);
-        //maskSize.setHeight(maskYMax - maskYMin);
-        auto maskGraphicStyle = GraphicStyle();
-        maskGraphicStyle.setLabel("Mask image border");
-        Pen maskPen = Pen(sedeen::RGBColor(255, 255, 0), 3, LineStyle::Dashed);
-        maskGraphicStyle.setPen(maskPen);
-        //Rectangle maskRectangle = Rectangle(maskVertices);
-        //m_overlayResult.drawRectangle(maskRectangle, maskGraphicStyle, 
-        //    "Mask image border", "The border around the mask image");
-
-        Polygon maskBorder = Polygon(maskVertices);
-        sedeen::TransformDirection t = sedeen::TransformDirection::Forward;
+        //Change the coordinate reference of the mask polygon to the reference frame of the source image
+        Polygon reframedMaskPolygon = ChangeReferenceFrame(maskPolygon, m_maskImageProperties, m_sourceImageProperties);
 
 
-        m_overlayResult.drawPolygon(maskBorder, maskGraphicStyle, "Mask image border", std::string());
-        //drawRectangle(maskRectangle, maskGraphicStyle, 
-        //    "Mask image border", "The border around the mask image");
+
+
+
+        //Apply the mask image transform to its polygon (after its reference frame has been changed)
+        //Polygon trMaskPolygon = TransformPolygon(maskPolygon, m_maskImageProperties, sedeen::TransformDirection::Forward);
+
+        //Transforms
+        //sedeen::TransformDirection t = sedeen::TransformDirection::Forward;
 
 
         //HERE: have to transform the rectangles
@@ -384,6 +415,27 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         //maskContainingRect.x();
         //maskContainingRect.y();
         //SRTTransform identity_transform(0, 0, 1, 1, 0, 0, 0);
+
+
+
+        //Draw the mask polygon
+        auto maskGraphicStyle = GraphicStyle();
+        maskGraphicStyle.setLabel("Mask image border");
+        Pen maskPen = Pen(sedeen::RGBColor(255, 255, 0), 3, LineStyle::Dashed);
+        maskGraphicStyle.setPen(maskPen);
+        m_overlayResult.drawPolygon(reframedMaskPolygon, maskGraphicStyle, "Mask image border", std::string());
+        //drawRectangle(maskRectangle, maskGraphicStyle, 
+        //    "Mask image border", "The border around the mask image");
+
+        //Draw the source polygon
+        auto sourceGraphicStyle = GraphicStyle();
+        sourceGraphicStyle.setLabel("Source image border");
+        Pen sourcePen = Pen(sedeen::RGBColor(0, 255, 255), 3, LineStyle::Dashed);
+        sourceGraphicStyle.setPen(sourcePen);
+        m_overlayResult.drawPolygon(sourcePolygon, sourceGraphicStyle, "Source image border", std::string());
+
+
+
 
 
 
@@ -398,15 +450,10 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         
         
         
-        
-
-
-        //Make a RectToGraphic method?
-        //conversion back can be just getting the containingrect
-        
+              
         
         //Find the intersection of the two rectangles
-        m_maskSourceIntersectionRect = sedeen::intersection(maskContainingRect, sourceContainingRect);
+        m_maskSourceIntersectionRect = Rect();   //sedeen::intersection(maskContainingRectF, sourceContainingRectF);
 
 
         //Draw the intersection
@@ -415,7 +462,7 @@ bool StainEvaluation::buildApplyMaskPipeline() {
 
 
 
-        //If the intersection is empty, 
+        //If the intersection is empty, set the mask factory equal to the source factory
         bool intersectionEmpty = sedeen::isEmpty(m_maskSourceIntersectionRect);
         if (intersectionEmpty) {
             //Set the member factory equal to the source factory
@@ -789,7 +836,38 @@ bool StainEvaluation::checkFile(const std::string &fileString, const std::string
     }
 }//end checkFile
 
+Polygon StainEvaluation::RectFToPolygon(const RectF &rectf) {
+    if (isEmpty(rectf)) { return Polygon(); }
+    //Get the vertices of the RectF and add them to a Polygon
+    double x_min = rectf.x();
+    double y_min = rectf.y();
+    double x_max = sedeen::xMax(rectf);
+    double y_max = sedeen::yMax(rectf);
+    auto vertices = std::vector<PointF>();
+    vertices.push_back(PointF(x_min, y_max));
+    vertices.push_back(PointF(x_max, y_max));
+    vertices.push_back(PointF(x_max, y_min));
+    vertices.push_back(PointF(x_min, y_min));
+    //Create new Polygon with these vertices
+    Polygon newPoly = Polygon(vertices);
+    return newPoly;
+}//end RectFToPolygon
 
+Polygon StainEvaluation::ChangeReferenceFrame(const Polygon &poly,
+    const ImageProperties &initial, const ImageProperties &final) {
+    //Build a new Polygon vertex by vertex
+    std::vector<PointF> initialVertices = poly.vertices();
+    std::vector<PointF> outVertices(initialVertices.size());
+    //Loop through each PointF and change its reference frame
+    for (auto it = initialVertices.begin(); it != initialVertices.end(); ++it) {
+        int pos = static_cast<int>(it - initialVertices.begin());
+        //Pass the PointF to the PointF overload of the ChangeReferenceFrame method
+        //and assign the resulting point to the same position in the new vertex vector
+        outVertices[pos] = ChangeReferenceFrame((*it), initial, final);
+    }
+    Polygon outputPolygon(outVertices);
+    return outputPolygon;
+}//end ChangeReferenceFrame (Polygon)
 
 
 
