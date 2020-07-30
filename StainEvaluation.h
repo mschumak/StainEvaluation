@@ -60,7 +60,7 @@ struct ImageProperties
 
     int nlevels;
     ///Pixel size as read from the image
-    sedeen::SizeF  image_pixel_size; //mm units
+    sedeen::SizeF  image_pixel_size; //um units
     sedeen::Size   image_size;
 
     //Unit conversion (between millimeters and micrometers)

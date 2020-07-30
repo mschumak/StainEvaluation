@@ -278,26 +278,38 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
 
 PointF StainEvaluation::ChangeReferenceFrame(const PointF &pf, 
     const ImageProperties &initial, const ImageProperties &final) {
-    //SRTTransform identityTransform(0, 0, 1, 1, 0, 0, 0);
     SRTTransform initialTransform = initial.sedeen_transform;
     SRTTransform finalTransform = final.sedeen_transform;
 
+    //The coordinates of the image centers are pixels*image_pixel_size
+    SizeF initialPixelSize = initial.image_pixel_size;
+    SizeF finalPixelSize = final.image_pixel_size;
 
-    pick up here!!!
+    //If there are non-zero values for the center coordinates in the transform, use those
+    //If not, use half the image size multiplied by the pixel size as the center coordinates
+    //x
+    double xFinalCenter = (finalTransform.center().getX() == 0.0)
+        ? (finalPixelSize.width() * static_cast<double>(final.image_size.width()) / 2.0)
+        : finalTransform.center().getX();
+    double xInitialCenter = (initialTransform.center().getX() == 0.0)
+        ? (initialPixelSize.width() * static_cast<double>(initial.image_size.width()) / 2.0)
+        : initialTransform.center().getX();
+    //y
+    double yFinalCenter = (finalTransform.center().getY() == 0.0)
+        ? (finalPixelSize.height() * static_cast<double>(final.image_size.height()) / 2.0)
+        : finalTransform.center().getY();
+    double yInitialCenter = (initialTransform.center().getY() == 0.0)
+        ? (initialPixelSize.height() * static_cast<double>(initial.image_size.height()) / 2.0)
+        : initialTransform.center().getY();
 
-
-    //Centers are aligned in the view window, but center values are based on image size
-    PointF centerDiff = PointF(finalTransform.center().getX()*4. - initialTransform.center().getX(),
-        finalTransform.center().getY()*4. - initialTransform.center().getY());
-
-    //PointF initialTopLeftCorner = PointF( - initial.image_size.width() / 2.0,
-    //    initialTransform.center().getY() + initial.image_size.height() / 2.0);
-    //PointF finalTopLeftCorner = PointF( - final.image_size.width() / 2.0,
-    //    finalTransform.center().getY() + final.image_size.height() / 2.0);
-    //PointF topLeftDiff = PointF(finalTopLeftCorner.getX() - initialTopLeftCorner.getX(),
-    //    finalTopLeftCorner.getY() - initialTopLeftCorner.getY());
-    //Add the coordinate system translation to the input point
-    PointF outPoint = PointF(pf.getX() + centerDiff.getX(), pf.getY() + centerDiff.getY());
+    //Get differences between center coordinate values
+    double xCenterDiff = (xFinalCenter - xInitialCenter);
+    double yCenterDiff = (yFinalCenter - yInitialCenter);
+    //Convert the initial point coordinates to the coordinate system of the final image
+    double xOutPoint = (initialPixelSize.width() * pf.getX() + xCenterDiff) / finalPixelSize.width();
+    double yOutPoint = (initialPixelSize.height() * pf.getY() + yCenterDiff) / finalPixelSize.height();
+    //Assign output point coordinates to the elements of a PointF
+    PointF outPoint = PointF(xOutPoint, yOutPoint);
     return outPoint;
 }//end ChangeReferenceFrame (PointF)
 
@@ -551,13 +563,13 @@ ImageProperties StainEvaluation::GetImageProperties(const image::ImageHandle& im
     int im_height = im->getMetaData()->get(image::IntegerTags::IMAGE_Y_DIMENSION, 0);
     imProps.image_size = sedeen::Size(im_width, im_height);
 
-    double x_pixel_size = 1;	//default val, mm
-    double y_pixel_size = 1;
+    double x_pixel_size = 1.;	//default val, um
+    double y_pixel_size = 1.;
     if (im->getMetaData()->has(image::DoubleTags::PIXEL_SIZE_X)) {
-        x_pixel_size = im->getMetaData()->get(image::DoubleTags::PIXEL_SIZE_X, 0) / 1000; //mm
+        x_pixel_size = im->getMetaData()->get(image::DoubleTags::PIXEL_SIZE_X, 0); //um
     }
     if (im->getMetaData()->has(image::DoubleTags::PIXEL_SIZE_Y)) {
-        y_pixel_size = im->getMetaData()->get(image::DoubleTags::PIXEL_SIZE_Y, 0) / 1000;
+        y_pixel_size = im->getMetaData()->get(image::DoubleTags::PIXEL_SIZE_Y, 0); //um
     }
     imProps.image_pixel_size = sedeen::SizeF(x_pixel_size, y_pixel_size);
 
@@ -584,8 +596,8 @@ const std::string StainEvaluation::generateImagePropertiesReport(const ImageProp
     ss << "    Width: " << image_size.width() << std::endl;
     ss << "    Height: " << image_size.height() << std::endl;
     ss << "---Image Pixel Size---" << std::endl;
-    ss << "    Pixel Width: " << image_pixel_size.width() << std::endl;
-    ss << "    Pixel Height: " << image_pixel_size.height() << std::endl;
+    ss << "    Pixel Width: " << image_pixel_size.width() << " um" << std::endl;
+    ss << "    Pixel Height: " << image_pixel_size.height() << " um" << std::endl;
     ss << "---Sedeen Transform---" << std::endl;
     ss << "    Pixel Spacing (um): (" << tr_pixel_spacing.width() << ", " << tr_pixel_spacing.height() << ")" << std::endl;
     ss << "    Center: (" << trcenter.getX() << ", " << trcenter.getY() << ")" << std::endl;
