@@ -108,7 +108,7 @@ void StainEvaluation::init(const image::ImageHandle& image) {
 
     //The threshold to apply to the mask image
     m_maskThreshold = createDoubleParameter(*this,
-        "Mask Value Threshold",   // Widget label
+        "Mask Threshold Value",   // Widget label
         "Threshold value to apply to the second image to create a mask of which pixels in the source to retain.",   // Widget tooltip
         m_maskThresholdDefaultVal, // Initial value
         0.0,                       // minimum value
@@ -122,7 +122,7 @@ void StainEvaluation::init(const image::ImageHandle& image) {
         "Save the cropped source image, cropped to the bounds of the intersection of the source and mask images.",
         croppedSaveOptions, true);
 
-    sedeen::file::FileDialogOptions maskedSaveOptions = defineSaveFileDialogOptions("Save masked limage as...");
+    sedeen::file::FileDialogOptions maskedSaveOptions = defineSaveFileDialogOptions("Save masked image as...");
     m_saveMaskedImageFileAs = createSaveFileDialogParameter(*this, "Save Masked Image As...",
         "Save the image with the mask and cropping applied.",
         maskedSaveOptions, true);
@@ -253,54 +253,56 @@ void StainEvaluation::run() {
 }//end run
 
 
+PointF StainEvaluation::GetImageCenterFromProperties(const ImageProperties &ip) {
+    //Sometimes the center() stored in the transform is (0,0). To deal with that:
+    //If there are non-zero values for the center coordinates in the transform, use those
+    //If not, use half the image size multiplied by the pixel size as the center coordinates
+    SRTTransform tr = ip.sedeen_transform;
+    SizeF pixelSize = ip.image_pixel_size;
+    //x
+    double x = (tr.center().getX() == 0.0)
+        ? (pixelSize.width() * static_cast<double>(ip.image_size.width()) / 2.0)
+        : tr.center().getX();
+    //y
+    double y = (tr.center().getY() == 0.0)
+        ? (pixelSize.height() * static_cast<double>(ip.image_size.height()) / 2.0)
+        : tr.center().getY();
 
-Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProperties &ip,
-    const sedeen::TransformDirection &t) {
-    if (poly.isNull()) { return Polygon(); }
-    //Create a temporary working Polygon
-    Polygon tempPolygon(poly);
-    //Get the transform from the ImageProperties
-    sedeen::SRTTransform ip_transform = ip.sedeen_transform;
-    sedeen::SizeF tr_box_pixel_spacing = ip.tr_pixel_spacing;
-    sedeen::SizeF image_pixel_size = ip.image_pixel_size;
-
-    //TEMP solution: adjust the scale factors by the pixel spacing values
-    //before applying the SRTTransform
-
-    //How do I transform from one space to another?
-
-    return Polygon();
-}//end TransformPolygon
-
-
+    PointF theCenter = PointF(x, y);
+    return theCenter;
+}//end GetImageCenterFromProperties
 
 
+PointF StainEvaluation::CalculateCenterDifference(const ImageProperties &initial, const ImageProperties &final) {
+    //The coordinates of the image centers are in units of um, so pixels*pixel_size/2
+    PointF initialCenter = GetImageCenterFromProperties(initial);
+    PointF finalCenter = GetImageCenterFromProperties(final);
+    SizeF finalPixelSize = final.image_pixel_size;
 
-PointF StainEvaluation::ChangeReferenceFrame(const PointF &pf, 
+    //Get differences between center coordinate values
+    double xCenterDiff = (finalCenter.getX() - initialCenter.getX());
+    double yCenterDiff = (finalCenter.getY() - initialCenter.getY());
+
+    PointF centerDiff = PointF(xCenterDiff / finalPixelSize.width(), yCenterDiff / finalPixelSize.height());
+    return centerDiff;
+}//end CalculateCenterDifference
+
+
+
+PointF ChangeReferenceFramerrr(const PointF &pf,
     const ImageProperties &initial, const ImageProperties &final) {
+    //The coordinates of the image centers are in units of um, so pixels*pixel_size/2
     SRTTransform initialTransform = initial.sedeen_transform;
     SRTTransform finalTransform = final.sedeen_transform;
-
-    //The coordinates of the image centers are pixels*image_pixel_size
     SizeF initialPixelSize = initial.image_pixel_size;
     SizeF finalPixelSize = final.image_pixel_size;
 
-    //If there are non-zero values for the center coordinates in the transform, use those
-    //If not, use half the image size multiplied by the pixel size as the center coordinates
     //x
-    double xFinalCenter = (finalTransform.center().getX() == 0.0)
-        ? (finalPixelSize.width() * static_cast<double>(final.image_size.width()) / 2.0)
-        : finalTransform.center().getX();
-    double xInitialCenter = (initialTransform.center().getX() == 0.0)
-        ? (initialPixelSize.width() * static_cast<double>(initial.image_size.width()) / 2.0)
-        : initialTransform.center().getX();
+    double xFinalCenter = finalTransform.center().getX();
+    double xInitialCenter = initialTransform.center().getX();
     //y
-    double yFinalCenter = (finalTransform.center().getY() == 0.0)
-        ? (finalPixelSize.height() * static_cast<double>(final.image_size.height()) / 2.0)
-        : finalTransform.center().getY();
-    double yInitialCenter = (initialTransform.center().getY() == 0.0)
-        ? (initialPixelSize.height() * static_cast<double>(initial.image_size.height()) / 2.0)
-        : initialTransform.center().getY();
+    double yFinalCenter = finalTransform.center().getY();
+    double yInitialCenter = initialTransform.center().getY();
 
     //Get differences between center coordinate values
     double xCenterDiff = (xFinalCenter - xInitialCenter);
@@ -315,7 +317,89 @@ PointF StainEvaluation::ChangeReferenceFrame(const PointF &pf,
 
 
 
+Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProperties &initial, const ImageProperties &final) {
+    if (poly.isNull()) { return Polygon(); }
+    //Define an identity transform
+    SRTTransform identityTransform(0., 0., 1., 1., 0., 0., 0.); //(translation, scale, rotation (deg), center of rotation)
 
+    //Work out how to deal with user-specified changes to the pixel spacing LAST.
+    SizeF initialTransformSpacing = initial.tr_pixel_spacing;
+    SizeF finalTransformSpacing = final.tr_pixel_spacing;
+
+    //Transforms and the stored pixel size for the images
+    SRTTransform initialTransform = initial.sedeen_transform;
+    SRTTransform finalTransform = final.sedeen_transform;
+    SizeF initialImagePixelSize = initial.image_pixel_size;
+    SizeF finalImagePixelSize = final.image_pixel_size;
+
+    //Locations of the image centers in their own coordinate systems
+    PointF initialImageCenter = GetImageCenterFromProperties(initial);
+    PointF finalImageCenter = GetImageCenterFromProperties(final);
+
+    //My nomenclature as compared with ExportTransformedROI:
+    //"target" image in ExportTransformedROI is my "final" image
+    //"source" image in ExportTransformedROI is my "initial" image
+
+    //Define the new transforms to be applied to the Polygon
+    //inverse of the transform applied to the final image space
+    SRTTransform fSpaceTransform(identityTransform);
+    //forward transform of the initial image space, converted to final image space units
+    SRTTransform iSpaceTransform(identityTransform);
+
+    //What to apply to the iSpaceTransform, which is the initial image space transform
+    PointF iBaseTranslation = initialTransform.translation();
+    PointF iBaseCenter = initialTransform.center();
+    SizeF iScale = initialTransform.scale();
+    double iRotation = initialTransform.rotation();
+    //Copy the scale factors
+    iSpaceTransform.setScale(iScale);
+    //Copy the rotation angle
+    iSpaceTransform.setRotation(iRotation);
+    //Rescale the translation
+    //PointF iSpaceTranslation = PointF(iBaseTranslation.getX() / finalImagePixelSize.width(),
+    //    iBaseTranslation.getY() / finalImagePixelSize.height());
+
+    PointF iSpaceTranslation = PointF(iBaseTranslation.getX()  / finalImagePixelSize.width() - (iScale.width() - 1.0)*iBaseCenter.getX(),
+        //+ finalImageCenter.getX()*iScale.width() / finalImagePixelSize.width(),
+        
+        iBaseTranslation.getY() / finalImagePixelSize.height() - (iScale.height() - 1.0)*iBaseCenter.getY()  );
+    iSpaceTransform.setTranslation(iSpaceTranslation);
+
+
+    //s_transform.setCenter(s_transform.center().getX() / s_spacing.width(), 
+    //    s_transform.center().getY() / s_spacing.height());
+
+
+    //What to apply to the fSpaceTransform, which is the final image space transform
+    PointF fBaseTranslation = finalTransform.translation();
+    PointF fBaseCenter = finalTransform.center();
+    SizeF fScale = finalTransform.scale();
+    double fRotation = finalTransform.rotation();
+    //Copy the scale factors
+    fSpaceTransform.setScale(fScale);
+    //Copy the rotation angle
+    fSpaceTransform.setRotation(fRotation);
+
+    //Rescale the translation
+    //PointF fSpaceTranslation = PointF(fBaseTranslation.getX() / finalImagePixelSize.width(),
+    //    fBaseTranslation.getY() / finalImagePixelSize.height());
+
+    PointF fSpaceTranslation = PointF( fBaseTranslation.getX() / finalImagePixelSize.width(),
+         fBaseTranslation.getY() / finalImagePixelSize.height());
+
+    fSpaceTransform.setTranslation(fSpaceTranslation);
+
+
+
+
+    //Apply the new transforms to the input Polygon
+    Polygon tempPolygon(poly);
+    //Inverse of the fSpaceTransform
+    tempPolygon.transform(fSpaceTransform, sedeen::TransformDirection::Inverse);
+    //Apply the iSpaceTransform (initial image transform in final image space units)
+    tempPolygon.transform(iSpaceTransform, sedeen::TransformDirection::Forward);
+    return tempPolygon;
+}//end TransformPolygon
 
 
 
@@ -396,7 +480,6 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         //Fill the ImageProperties struct for the source image
         m_sourceImageProperties = GetImageProperties(m_sourceImage, &sourceImageInfo, sourceTrSpacing);
 
-
         //Get the containing rectangles of the images with double-precision element data
         sedeen::RectF maskContainingRectF = sedeen::RectF(sedeen::image::rect(m_maskImage, 0));
         sedeen::RectF sourceContainingRectF = sedeen::RectF(sedeen::image::rect(m_sourceImage, 0));
@@ -408,26 +491,10 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         //Change the coordinate reference of the mask polygon to the reference frame of the source image
         Polygon reframedMaskPolygon = ChangeReferenceFrame(maskPolygon, m_maskImageProperties, m_sourceImageProperties);
 
-
-
-
-
-        //Apply the mask image transform to its polygon (after its reference frame has been changed)
-        //Polygon trMaskPolygon = TransformPolygon(maskPolygon, m_maskImageProperties, sedeen::TransformDirection::Forward);
-
-        //Transforms
-        //sedeen::TransformDirection t = sedeen::TransformDirection::Forward;
-
-
-        //HERE: have to transform the rectangles
-
-        //auto spacingRatio = sedeen::SizeF(t_attr.spacing.width() / s_attr.spacing.width(),
-        //    t_attr.spacing.height() / s_attr.spacing.height());
-
-        //maskContainingRect.x();
-        //maskContainingRect.y();
-        //SRTTransform identity_transform(0, 0, 1, 1, 0, 0, 0);
-
+        //The source image polygon will always stay in the coordinate system of the source image,
+        //so no transform needs to be applied to it. Instead, apply an inverse transform to the mask image polygon
+        //before applying its transform
+        Polygon trMaskPolygon = TransformPolygon(reframedMaskPolygon, m_maskImageProperties, m_sourceImageProperties);
 
 
         //Draw the mask polygon
@@ -435,9 +502,7 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         maskGraphicStyle.setLabel("Mask image border");
         Pen maskPen = Pen(sedeen::RGBColor(255, 255, 0), 3, LineStyle::Dashed);
         maskGraphicStyle.setPen(maskPen);
-        m_overlayResult.drawPolygon(reframedMaskPolygon, maskGraphicStyle, "Mask image border", std::string());
-        //drawRectangle(maskRectangle, maskGraphicStyle, 
-        //    "Mask image border", "The border around the mask image");
+        m_overlayResult.drawPolygon(trMaskPolygon, maskGraphicStyle, "Mask image border", std::string());
 
         //Draw the source polygon
         auto sourceGraphicStyle = GraphicStyle();
@@ -446,23 +511,6 @@ bool StainEvaluation::buildApplyMaskPipeline() {
         sourceGraphicStyle.setPen(sourcePen);
         m_overlayResult.drawPolygon(sourcePolygon, sourceGraphicStyle, "Source image border", std::string());
 
-
-
-
-
-
-        //Convert to graphics, transform, intersect, get containing rect?
-
-
-        //Draw each rectangle
-
-        //m_overlayResult;
-
-        
-        
-        
-        
-              
         
         //Find the intersection of the two rectangles
         m_maskSourceIntersectionRect = Rect();   //sedeen::intersection(maskContainingRectF, sourceContainingRectF);
@@ -881,7 +929,25 @@ Polygon StainEvaluation::ChangeReferenceFrame(const Polygon &poly,
     return outputPolygon;
 }//end ChangeReferenceFrame (Polygon)
 
+PointF StainEvaluation::ChangeReferenceFrame(const PointF &pf,
+    const ImageProperties &initial, const ImageProperties &final) {
+    //The coordinates of the image centers are in units of um, so pixels*pixel_size/2
+    SRTTransform initialTransform = initial.sedeen_transform;
+    SRTTransform finalTransform = final.sedeen_transform;
+    SizeF initialPixelSize = initial.image_pixel_size;
+    SizeF finalPixelSize = final.image_pixel_size;
 
+    //Get differences between center coordinate values
+    PointF centerDiff = CalculateCenterDifference(initial, final);
+
+    //Convert the initial point coordinates to the coordinate system of the final image
+    double xOutPoint = (initialPixelSize.width() * pf.getX()) / finalPixelSize.width() + centerDiff.getX();
+    double yOutPoint = (initialPixelSize.height() * pf.getY()) / finalPixelSize.height() + centerDiff.getY();
+
+    //Assign output point coordinates to the elements of a PointF
+    PointF outPoint = PointF(xOutPoint, yOutPoint);
+    return outPoint;
+}//end ChangeReferenceFrame (PointF)
 
 
 

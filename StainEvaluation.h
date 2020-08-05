@@ -123,14 +123,19 @@ private:
 
     ///Use the corners of a RectF object to define a 4-vertex Polygon
     Polygon RectFToPolygon(const RectF &rectf);
-    ///Transform a Polygon
-    Polygon TransformPolygon(const Polygon &poly, const ImageProperties &ip, const TransformDirection &t);
+    ///Transform a Polygon when there are transforms applied to both the initial and final image spaces
+    Polygon TransformPolygon(const Polygon &poly, const ImageProperties &initial, const ImageProperties &final);
 
     ///Change the frame of reference of a Polygon from an initial image to a final image space
     Polygon ChangeReferenceFrame(const Polygon &poly, const ImageProperties &initial, const ImageProperties &final);
     ///Change the frame of reference of a PointF from an initial image to a final image space
     PointF ChangeReferenceFrame(const PointF &pf, const ImageProperties &initial, const ImageProperties &final);
 
+    ///Gets center() from transform in ImageProperties, or if it is (0,0), returns half the image size multiplied by the pixel size.
+    PointF GetImageCenterFromProperties(const ImageProperties &ip);
+
+    ///Calculate the change in location of the image center of the initial image in the final image reference frame
+    PointF CalculateCenterDifference(const ImageProperties &initial, const ImageProperties &final);
 
     ///Create text for a report containing the properties of 
     const std::string generateImagePropertiesReport(const ImageProperties &ip);
