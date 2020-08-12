@@ -322,6 +322,10 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
     //Define an identity transform
     SRTTransform identityTransform(0., 0., 1., 1., 0., 0., 0.); //(translation, scale, rotation (deg), center of rotation)
 
+    //Coordinates of the image centers in their own spaces
+    PointF initialImageCenter = GetImageCenterFromProperties(initial);
+    PointF finalImageCenter = GetImageCenterFromProperties(final);
+
     //Work out how to deal with user-specified changes to the pixel spacing LAST.
     SizeF initialTransformSpacing = initial.tr_pixel_spacing;
     SizeF finalTransformSpacing = final.tr_pixel_spacing;
@@ -332,9 +336,14 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
     SizeF initialImagePixelSize = initial.image_pixel_size;
     SizeF finalImagePixelSize = final.image_pixel_size;
 
-    //Locations of the image centers in their own coordinate systems
-    PointF initialImageCenter = GetImageCenterFromProperties(initial);
-    PointF finalImageCenter = GetImageCenterFromProperties(final);
+    //Initial image translation, scale, rotation
+    PointF iBaseTranslation = initialTransform.translation();
+    SizeF iScale = initialTransform.scale();
+    double iRotation = initialTransform.rotation();
+    //Final image translation, scale, rotation
+    PointF fBaseTranslation = finalTransform.translation();
+    SizeF fScale = finalTransform.scale();
+    double fRotation = finalTransform.rotation();
 
     //My nomenclature as compared with ExportTransformedROI:
     //"target" image in ExportTransformedROI is my "final" image
@@ -347,50 +356,45 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
     SRTTransform iSpaceTransform(identityTransform);
 
     //What to apply to the iSpaceTransform, which is the initial image space transform
-    PointF iBaseTranslation = initialTransform.translation();
-    PointF iBaseCenter = initialTransform.center();
-    SizeF iScale = initialTransform.scale();
-    double iRotation = initialTransform.rotation();
-    //Copy the scale factors
-    iSpaceTransform.setScale(iScale);
     //Copy the rotation angle
     iSpaceTransform.setRotation(iRotation);
-    //Rescale the translation
-    //PointF iSpaceTranslation = PointF(iBaseTranslation.getX() / finalImagePixelSize.width(),
-    //    iBaseTranslation.getY() / finalImagePixelSize.height());
+    //Copy the scale factors
+    iSpaceTransform.setScale(iScale);
+    //How much to adjust the frame around the initial image when scaling
+    PointF iScaleTranslationAdjustment = PointF(
+        (1.0 - iScale.width()) * finalImageCenter.getX() / finalImagePixelSize.width(),
+        (1.0 - iScale.height()) * finalImageCenter.getY() / finalImagePixelSize.height());
 
-    PointF iSpaceTranslation = PointF(iBaseTranslation.getX()  / finalImagePixelSize.width() - (iScale.width() - 1.0)*iBaseCenter.getX(),
-        //+ finalImageCenter.getX()*iScale.width() / finalImagePixelSize.width(),
-        
-        iBaseTranslation.getY() / finalImagePixelSize.height() - (iScale.height() - 1.0)*iBaseCenter.getY()  );
+    //Rescale the translation
+    PointF iSpaceTranslation = PointF(
+        ((1. / fScale.width()) * iBaseTranslation.getX()
+            / finalImagePixelSize.width())
+            + iScaleTranslationAdjustment.getX(),
+        ((1. / fScale.height()) * iBaseTranslation.getY()
+            / finalImagePixelSize.height())
+            + iScaleTranslationAdjustment.getY()  );
     iSpaceTransform.setTranslation(iSpaceTranslation);
 
-
-    //s_transform.setCenter(s_transform.center().getX() / s_spacing.width(), 
-    //    s_transform.center().getY() / s_spacing.height());
-
-
     //What to apply to the fSpaceTransform, which is the final image space transform
-    PointF fBaseTranslation = finalTransform.translation();
-    PointF fBaseCenter = finalTransform.center();
-    SizeF fScale = finalTransform.scale();
-    double fRotation = finalTransform.rotation();
     //Copy the scale factors
     fSpaceTransform.setScale(fScale);
     //Copy the rotation angle
     fSpaceTransform.setRotation(fRotation);
 
+    //How much to adjust the frame around the initial image when scaling the final image
+    PointF fScaleTranslationAdjustment = PointF(
+        (1.0 - fScale.width()) * finalImageCenter.getX() / finalImagePixelSize.width(),
+        (1.0 - fScale.height()) * finalImageCenter.getY() / finalImagePixelSize.height());
+
     //Rescale the translation
-    //PointF fSpaceTranslation = PointF(fBaseTranslation.getX() / finalImagePixelSize.width(),
-    //    fBaseTranslation.getY() / finalImagePixelSize.height());
-
-    PointF fSpaceTranslation = PointF( fBaseTranslation.getX() / finalImagePixelSize.width(),
-         fBaseTranslation.getY() / finalImagePixelSize.height());
-
+    PointF fSpaceTranslation = PointF(
+        ((1. / iScale.width()) * fBaseTranslation.getX()
+            / finalImagePixelSize.width())
+            + fScaleTranslationAdjustment.getX(),
+        ((1. / iScale.height()) * fBaseTranslation.getY()
+            / finalImagePixelSize.height())
+            + fScaleTranslationAdjustment.getY() );
     fSpaceTransform.setTranslation(fSpaceTranslation);
-
-
-
 
     //Apply the new transforms to the input Polygon
     Polygon tempPolygon(poly);
