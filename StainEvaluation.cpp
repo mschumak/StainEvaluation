@@ -326,24 +326,48 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
     PointF initialImageCenter = GetImageCenterFromProperties(initial);
     PointF finalImageCenter = GetImageCenterFromProperties(final);
 
-    //Work out how to deal with user-specified changes to the pixel spacing LAST.
-    SizeF initialTransformSpacing = initial.tr_pixel_spacing;
-    SizeF finalTransformSpacing = final.tr_pixel_spacing;
-
     //Transforms and the stored pixel size for the images
     SRTTransform initialTransform = initial.sedeen_transform;
     SRTTransform finalTransform = final.sedeen_transform;
     SizeF initialImagePixelSize = initial.image_pixel_size;
     SizeF finalImagePixelSize = final.image_pixel_size;
 
+    //The user can set a pixel spacing in the Transform box.
+    //See whether this differs from the image pixel size, apply ratio as scale transform.
+    SizeF initialTransformSpacing = initial.tr_pixel_spacing;
+    SizeF finalTransformSpacing = final.tr_pixel_spacing;
+
+    //Error check that no values are zero
+    bool initialZeroVals = (initialTransformSpacing.width() == 0.0)
+        || (initialTransformSpacing.height() == 0.0)
+        || (initialImagePixelSize.width() == 0.0)
+        || (initialImagePixelSize.height() == 0.0);
+    bool finalZeroVals = (finalTransformSpacing.width() == 0.0)
+        || (finalTransformSpacing.height() == 0.0)
+        || (finalImagePixelSize.width() == 0.0)
+        || (finalImagePixelSize.height() == 0.0);
+    //Get ratios of pixel spacing and image pixel size
+    SizeF iSpacingRatio = initialZeroVals ? SizeF(1.0, 1.0)
+        : SizeF(initialTransformSpacing.width() / initialImagePixelSize.width(), 
+            initialTransformSpacing.height() / initialImagePixelSize.height());
+    SizeF fSpacingRatio = finalZeroVals ? SizeF(1.0, 1.0)
+        : SizeF(finalTransformSpacing.width() / finalImagePixelSize.width(),
+            finalTransformSpacing.height() / finalImagePixelSize.height());
+
     //Initial image translation, scale, rotation
-    PointF iBaseTranslation = initialTransform.translation();
+    PointF iBaseTranslation = initialTransform.translation();    
     SizeF iScale = initialTransform.scale();
     double iRotation = initialTransform.rotation();
     //Final image translation, scale, rotation
     PointF fBaseTranslation = finalTransform.translation();
     SizeF fScale = finalTransform.scale();
     double fRotation = finalTransform.rotation();
+
+    //Scale adjusted by the spacing ratio
+    SizeF iRatioAdjScale = SizeF(iScale.width()*iSpacingRatio.width(), 
+        iScale.height()*iSpacingRatio.height());
+    SizeF fRatioAdjScale = SizeF(fScale.width()*fSpacingRatio.width(),
+        fScale.height()*fSpacingRatio.height());
 
     //My nomenclature as compared with ExportTransformedROI:
     //"target" image in ExportTransformedROI is my "final" image
@@ -359,17 +383,21 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
     //Copy the rotation angle
     iSpaceTransform.setRotation(iRotation);
     //Copy the scale factors
-    iSpaceTransform.setScale(iScale);
+    iSpaceTransform.setScale(iRatioAdjScale);
     //How much to adjust the frame around the initial image when scaling
     PointF iScaleTranslationAdjustment = PointF(
-        (1.0 - iScale.width()) * finalImageCenter.getX() / finalImagePixelSize.width(),
-        (1.0 - iScale.height()) * finalImageCenter.getY() / finalImagePixelSize.height());
+        (1.0 - iRatioAdjScale.width()) * finalImageCenter.getX() / finalImagePixelSize.width(),
+        (1.0 - iRatioAdjScale.height()) * finalImageCenter.getY() / finalImagePixelSize.height());
+
+    //There is a translation error that occurs when both the pixel spacing and scale factors are changed.
+    PointF iScaleOffCenterAdjust = PointF(    (iSpacingRatio.width()-1.0)*(iScale.width()-1.0)      *initialImageCenter.getX() / finalImagePixelSize.width()
+        , 0.0);
 
     //Rescale the translation
     PointF iSpaceTranslation = PointF(
-        ((1. / fScale.width()) * iBaseTranslation.getX()
+        ((1. / fScale.width()) * iBaseTranslation.getX() 
             / finalImagePixelSize.width())
-            + iScaleTranslationAdjustment.getX(),
+            + iScaleTranslationAdjustment.getX() + iScaleOffCenterAdjust.getX(),
         ((1. / fScale.height()) * iBaseTranslation.getY()
             / finalImagePixelSize.height())
             + iScaleTranslationAdjustment.getY()  );
@@ -377,14 +405,14 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
 
     //What to apply to the fSpaceTransform, which is the final image space transform
     //Copy the scale factors
-    fSpaceTransform.setScale(fScale);
+    fSpaceTransform.setScale(fRatioAdjScale);
     //Copy the rotation angle
     fSpaceTransform.setRotation(fRotation);
 
     //How much to adjust the frame around the initial image when scaling the final image
     PointF fScaleTranslationAdjustment = PointF(
-        (1.0 - fScale.width()) * finalImageCenter.getX() / finalImagePixelSize.width(),
-        (1.0 - fScale.height()) * finalImageCenter.getY() / finalImagePixelSize.height());
+        (1.0 - fRatioAdjScale.width()) * finalImageCenter.getX() / finalImagePixelSize.width(),
+        (1.0 - fRatioAdjScale.height()) * finalImageCenter.getY() / finalImagePixelSize.height());
 
     //Rescale the translation
     PointF fSpaceTranslation = PointF(
