@@ -131,7 +131,7 @@ private:
     ///Change the frame of reference of a PointF from an initial image to a final image space
     PointF ChangeReferenceFrame(const PointF &pf, const ImageProperties &initial, const ImageProperties &final);
 
-    ///Gets center() from transform in ImageProperties, or if it is (0,0), returns half the image size multiplied by the pixel size.
+    ///Gets the image center coords as half the image size multiplied by the pixel size.
     PointF GetImageCenterFromProperties(const ImageProperties &ip);
 
     ///Calculate the change in location of the image center of the initial image in the final image reference frame

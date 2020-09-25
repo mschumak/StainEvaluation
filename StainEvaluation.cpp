@@ -135,11 +135,6 @@ void StainEvaluation::init(const image::ImageHandle& image) {
 }//end init
 
 
-
-
-
-
-
 void StainEvaluation::run() {
     //Define an empty report string
     std::string report = std::string();
@@ -254,19 +249,14 @@ void StainEvaluation::run() {
 
 
 PointF StainEvaluation::GetImageCenterFromProperties(const ImageProperties &ip) {
-    //Sometimes the center() stored in the transform is (0,0). To deal with that:
-    //If there are non-zero values for the center coordinates in the transform, use those
-    //If not, use half the image size multiplied by the pixel size as the center coordinates
+    //The center() stored in the transform is unreliable as a measure of the centre of an image. 
+    //To deal with that, use half the image size multiplied by the pixel size as the center of an image.
     SRTTransform tr = ip.sedeen_transform;
     SizeF pixelSize = ip.image_pixel_size;
     //x
-    double x = (tr.center().getX() == 0.0)
-        ? (pixelSize.width() * static_cast<double>(ip.image_size.width()) / 2.0)
-        : tr.center().getX();
+    double x = (pixelSize.width() * static_cast<double>(ip.image_size.width()) / 2.0);
     //y
-    double y = (tr.center().getY() == 0.0)
-        ? (pixelSize.height() * static_cast<double>(ip.image_size.height()) / 2.0)
-        : tr.center().getY();
+    double y = (pixelSize.height() * static_cast<double>(ip.image_size.height()) / 2.0);
 
     PointF theCenter = PointF(x, y);
     return theCenter;
@@ -297,6 +287,7 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
     //Coordinates of the image centers in their own spaces
     PointF initialImageCenter = GetImageCenterFromProperties(initial);
     PointF finalImageCenter = GetImageCenterFromProperties(final);
+    //Get the difference between the centers
 
     //Transforms and the stored pixel size for the images
     SRTTransform initialTransform = initial.sedeen_transform;
@@ -389,15 +380,34 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
             + iScaleTranslationAdjustment.getY()  );
     iSpaceTransform.setTranslation(iSpaceTranslation);
 
-
     //Copy the rotation angle
     iSpaceTransform.setRotation(iRotation);
+    //iSpaceTransform.setCenter(initialImageCenter); //initialImageCenter calculated from image dimensions
 
-    ///double iRotationCenter_x = initialImageCenter.getX();
-    ///double iRotationCenter_y = initialImageCenter.getY();
+    //Have to set where to rotate around
+    //initialImageCenter calculated from image dimensions
+    //The rotation center depends on
+    double rad_per_deg = std::acos(-1.0)/180.0; // pi/180
+    double iRotationRad = iRotation * rad_per_deg;
 
-    //Have to set where to rotate around (either set or move from current)
-    ///iSpaceTransform.setCenter(iRotationCenter_x, iRotationCenter_y);
+    //double iRotationCenter_x = (initialImageCenter.getX() - 1000.0)*std::cos(iRotationRad)
+    //    + (initialImageCenter.getY() + 1000.0)*std::sin(iRotationRad);
+
+    //double iRotationCenter_y = (initialImageCenter.getY() + 1000.0)*std::cos(iRotationRad)
+    //    - (initialImageCenter.getX() - 1000.0)*std::sin(iRotationRad);
+
+    //PointF iRotCenterAdjust = PointF(-1200.0, 1200.0);
+
+    PointF iRotCenterAdjust = PointF(-finalImageCenter.getX() / finalImagePixelSize.width() / 2.0, 
+        finalImageCenter.getY() / finalImagePixelSize.height() / 2.0);
+
+    double iRotationCenter_x = (initialImageCenter.getX() + iRotCenterAdjust.getX())*std::cos(iRotationRad)
+        + (initialImageCenter.getY() + iRotCenterAdjust.getY())*std::sin(iRotationRad);
+
+    double iRotationCenter_y = (initialImageCenter.getY() + iRotCenterAdjust.getY())*std::cos(iRotationRad)
+        - (initialImageCenter.getX() + iRotCenterAdjust.getX())*std::sin(iRotationRad);
+
+    iSpaceTransform.setCenter(iRotationCenter_x, iRotationCenter_y);
 
 
 
@@ -407,6 +417,7 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
     //SizeF fRatioAdjScale = SizeF(fScale.width()*fSpacingRatio.width(),
     //    fScale.height()*fSpacingRatio.height());
     //fSpaceTransform.setScale(fRatioAdjScale);
+    fSpaceTransform.setScale(fScale);
 
     //How much to adjust the frame around the initial image when scaling the final image
     //There is an extra effect when both the spacing ratio and the user-defined scale are not 1
@@ -445,15 +456,14 @@ Polygon StainEvaluation::TransformPolygon(const Polygon &poly, const ImageProper
     fSpaceTransform.setTranslation(fSpaceTranslation);
 
     //****
-    //TEMP!
     //Copy the rotation angle
     //fSpaceTransform.setRotation(fRotation);
+    //fSpaceTransform.setCenter(finalImageCenter); //finalImageCenter calculated from image dimensions
 
-    //double fRotationCenter_x = finalImageCenter.getX();
-    //double fRotationCenter_y = finalImageCenter.getY();
-
+    ///double fRotationCenter_x = finalImageCenter.getX();
+    ///double fRotationCenter_y = finalImageCenter.getY();
     //Have to set where to rotate around (either set or move from current)
-    //fSpaceTransform.setCenter(fRotationCenter_x, fRotationCenter_y);
+    ///fSpaceTransform.setCenter(fRotationCenter_x, fRotationCenter_y);
     //****
 
     //Apply the new transforms to the input Polygon
@@ -976,6 +986,14 @@ Polygon StainEvaluation::RectFToPolygon(const RectF &rectf) {
     Polygon newPoly = Polygon(vertices);
     return newPoly;
 }//end RectFToPolygon
+
+
+
+
+//Transform will go here.
+
+
+
 
 Polygon StainEvaluation::ChangeReferenceFrame(const Polygon &poly,
     const ImageProperties &initial, const ImageProperties &final) {
